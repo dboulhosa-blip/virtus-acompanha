@@ -1,0 +1,572 @@
+const STORAGE_KEY = "virtus-acompanha-patients";
+const API_URL = "/api/patients";
+
+const initialPatients = [];
+
+const state = {
+  activeView: "dashboard",
+  classificationFilter: "Todos",
+  doctorFilter: "Todos",
+  dateFilter: "",
+  search: "",
+};
+
+const tableBody = document.querySelector("#patient-table");
+const doctorCards = document.querySelector("#doctor-cards");
+const doctorFilter = document.querySelector("#doctor-filter");
+const dateFilter = document.querySelector("#date-filter");
+const searchInput = document.querySelector("#search-input");
+const sideEffects = document.querySelector("#side-effects");
+const sideEffectDetail = document.querySelector("#side-effect-detail");
+const form = document.querySelector("#followup-form");
+const registrationForm = document.querySelector("#registration-form");
+const classificationOutput = document.querySelector("#classification-output");
+const registrationOutput = document.querySelector("#registration-output");
+const registrationMessage = document.querySelector("#registration-message");
+const registrationWhatsapp = document.querySelector("#registration-whatsapp");
+const refreshButton = document.querySelector("#refresh-data");
+const focusFormButton = document.querySelector("[data-focus-form]");
+
+let patients = [];
+let isApiStorageAvailable = false;
+
+function loadLocalPatients() {
+  try {
+    const storedPatients = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    return Array.isArray(storedPatients) && storedPatients.length
+      ? storedPatients
+      : [...initialPatients];
+  } catch {
+    return [...initialPatients];
+  }
+}
+
+function saveLocalPatients() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(patients));
+}
+
+async function loadPatients() {
+  if (window.location.protocol === "file:") return loadLocalPatients();
+
+  try {
+    const response = await fetch(API_URL);
+    if (!response.ok) throw new Error("API indisponível");
+    const apiPatients = await response.json();
+    isApiStorageAvailable = true;
+    return Array.isArray(apiPatients) && apiPatients.length
+      ? apiPatients
+      : [...initialPatients];
+  } catch {
+    isApiStorageAvailable = false;
+    return loadLocalPatients();
+  }
+}
+
+async function savePatients() {
+  saveLocalPatients();
+
+  if (!isApiStorageAvailable) return;
+
+  try {
+    const response = await fetch(API_URL, {
+      body: JSON.stringify(patients),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "PUT",
+    });
+
+    if (!response.ok) throw new Error("Falha ao salvar na API");
+  } catch {
+    isApiStorageAvailable = false;
+  }
+}
+
+function createElement(tag, options = {}) {
+  const element = document.createElement(tag);
+
+  if (options.className) element.className = options.className;
+  if (options.text) element.textContent = options.text;
+  if (options.type) element.type = options.type;
+  if (options.value) element.value = options.value;
+  if (options.colSpan) element.colSpan = options.colSpan;
+  if (options.href) element.href = options.href;
+  if (options.target) element.target = options.target;
+  if (options.rel) element.rel = options.rel;
+
+  return element;
+}
+
+function formatDate(date) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(`${date}T12:00:00`));
+}
+
+function toDateInputValue(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(date, days) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
+}
+
+function badgeClass(classification) {
+  return `badge badge-${classification.toLowerCase()}`;
+}
+
+function normalizePhone(phone) {
+  const digits = phone.replace(/\D/g, "");
+
+  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
+  return digits;
+}
+
+function getPatientFormUrl(patient) {
+  const url = new URL(window.location.href);
+  url.hash = "formulario-paciente";
+
+  if (patient?.id) url.searchParams.set("patient", patient.id);
+  return url.toString();
+}
+
+function buildWhatsAppMessage(patient) {
+  return `Olá, ${patient.name}! Como parte do acompanhamento do Instituto Virtus, gostaríamos de saber como você está evoluindo desde a última consulta. Por favor, responda o formulário pelo link: ${getPatientFormUrl(patient)}`;
+}
+
+function getWhatsAppUrl(patient) {
+  return `https://wa.me/${normalizePhone(patient.phone || "")}?text=${encodeURIComponent(
+    buildWhatsAppMessage(patient),
+  )}`;
+}
+
+function getActionForClassification(classification) {
+  const actions = {
+    Verde: "Avaliar possibilidade de postergar o retorno",
+    Amarelo: "Manter retorno previamente agendado",
+    Vermelho: "Destacar para avaliação médica prioritária",
+  };
+
+  return actions[classification];
+}
+
+function getFilteredPatients({ includeSearch = false } = {}) {
+  return patients.filter((patient) => {
+    const matchesClassification =
+      state.classificationFilter === "Todos" ||
+      patient.classification === state.classificationFilter;
+    const matchesDoctor =
+      state.doctorFilter === "Todos" || patient.doctor === state.doctorFilter;
+    const matchesDate = !state.dateFilter || patient.returnDate === state.dateFilter;
+    const matchesSearch =
+      !includeSearch ||
+      patient.name.toLowerCase().includes(state.search.toLowerCase().trim());
+
+    return matchesClassification && matchesDoctor && matchesDate && matchesSearch;
+  });
+}
+
+function renderMetrics() {
+  document.querySelector("#metric-total").textContent = patients.length;
+  document.querySelector("#metric-green").textContent = patients.filter(
+    (patient) => patient.classification === "Verde",
+  ).length;
+  document.querySelector("#metric-yellow").textContent = patients.filter(
+    (patient) => patient.classification === "Amarelo",
+  ).length;
+  document.querySelector("#metric-red").textContent = patients.filter(
+    (patient) => patient.classification === "Vermelho",
+  ).length;
+}
+
+function renderDoctorOptions() {
+  const selectedDoctor = doctorFilter.value || "Todos";
+  const doctors = [...new Set(patients.map((patient) => patient.doctor))].sort();
+
+  doctorFilter.replaceChildren(createElement("option", { text: "Todos", value: "Todos" }));
+
+  doctors.forEach((doctor) => {
+    doctorFilter.append(createElement("option", { text: doctor, value: doctor }));
+  });
+
+  doctorFilter.value = doctors.includes(selectedDoctor) ? selectedDoctor : "Todos";
+  state.doctorFilter = doctorFilter.value;
+}
+
+function renderTable() {
+  const rows = getFilteredPatients();
+  tableBody.replaceChildren();
+
+  if (!rows.length) {
+    const row = createElement("tr");
+    const cell = createElement("td", {
+      colSpan: 7,
+      text: "Nenhum paciente encontrado para os filtros selecionados.",
+    });
+    row.append(cell);
+    tableBody.append(row);
+    return;
+  }
+
+  rows.forEach((patient) => {
+    const row = createElement("tr");
+    const patientCell = createElement("td");
+    const name = createElement("span", {
+      className: "patient-name",
+      text: patient.name,
+    });
+    const meta = createElement("span", {
+      className: "patient-meta",
+      text: patient.phone ? `${patient.doctor} - ${patient.phone}` : patient.doctor,
+    });
+    const badge = createElement("span", {
+      className: badgeClass(patient.classification),
+      text: patient.classification,
+    });
+    const status = createElement("span", {
+      className: patient.decision ? "status-pill is-decided" : "status-pill",
+      text: patient.decision || patient.status,
+    });
+
+    patientCell.append(name, meta);
+    row.append(
+      patientCell,
+      createElement("td", { text: formatDate(patient.lastVisit) }),
+      createElement("td", { text: formatDate(patient.returnDate) }),
+      createElement("td"),
+      createElement("td"),
+      createElement("td", { text: patient.action }),
+      createElement("td"),
+    );
+    row.children[3].append(badge);
+    row.children[4].append(status);
+    row.children[6].append(createWhatsAppAction(patient));
+    tableBody.append(row);
+  });
+}
+
+function createWhatsAppAction(patient) {
+  if (!patient.phone) {
+    return createElement("span", { className: "patient-meta", text: "Sem telefone" });
+  }
+
+  return createElement("a", {
+    className: "table-action",
+    href: getWhatsAppUrl(patient),
+    target: "_blank",
+    rel: "noreferrer",
+    text: "Enviar formulário",
+  });
+}
+
+function renderDoctorCards() {
+  const cards = getFilteredPatients({ includeSearch: true });
+  doctorCards.replaceChildren();
+
+  if (!cards.length) {
+    doctorCards.append(createElement("p", { className: "empty-state", text: "Nenhum card encontrado." }));
+    return;
+  }
+
+  cards.forEach((patient) => {
+    const card = createElement("article", { className: "patient-card" });
+    const cardTop = createElement("div", { className: "card-top" });
+    const patientInfo = createElement("div");
+    const name = createElement("span", {
+      className: "patient-name",
+      text: patient.name,
+    });
+    const meta = createElement("span", {
+      className: "patient-meta",
+      text: `Consulta anterior: ${formatDate(patient.lastVisit)}${patient.phone ? ` - ${patient.phone}` : ""}`,
+    });
+    const badge = createElement("span", {
+      className: badgeClass(patient.classification),
+      text: patient.classification,
+    });
+    const summary = createElement("p", {
+      className: "ai-summary",
+      text: patient.summary,
+    });
+    const decisions = createElement("div", { className: "decision-grid" });
+    const feedback = createElement("p", {
+      className: patient.decision ? "decision-note is-visible" : "decision-note",
+      text: patient.decision ? `Decisão registrada: ${patient.decision}` : "",
+    });
+
+    ["Manter retorno", "Postergar retorno", "Solicitar contato", "Antecipar consulta"].forEach(
+      (decision) => {
+        const button = createElement("button", { type: "button", text: decision });
+        button.classList.toggle("is-selected", patient.decision === decision);
+        button.addEventListener("click", () => registerDecision(patient.id, decision));
+        decisions.append(button);
+      },
+    );
+
+    patientInfo.append(name, meta);
+    cardTop.append(patientInfo, badge);
+    card.append(cardTop, summary, decisions, feedback);
+    doctorCards.append(card);
+  });
+}
+
+function render() {
+  renderMetrics();
+  renderDoctorOptions();
+  renderTable();
+  renderDoctorCards();
+}
+
+function setView(view) {
+  state.activeView = view;
+  document.querySelectorAll(".view").forEach((section) => {
+    section.classList.toggle("is-visible", section.id === `${view}-view`);
+  });
+  document.querySelectorAll(".nav-item").forEach((item) => {
+    item.classList.toggle("is-active", item.dataset.view === view);
+  });
+}
+
+function getLinkedPatient() {
+  const patientId = new URLSearchParams(window.location.search).get("patient");
+  return patients.find((patient) => patient.id === patientId);
+}
+
+function applyLinkedPatientToForm() {
+  const linkedPatient = getLinkedPatient();
+
+  if (!linkedPatient) return;
+
+  form.elements.name.value = linkedPatient.name;
+  form.elements.birthdate.value = linkedPatient.birthdate || "";
+  classificationOutput.textContent = `Resposta vinculada a ${linkedPatient.name}.`;
+}
+
+function openViewFromHash() {
+  if (window.location.hash === "#formulario-paciente") {
+    setView("form");
+    applyLinkedPatientToForm();
+    return;
+  }
+
+  if (window.location.hash === "#cadastro-paciente") {
+    setView("registration");
+  }
+}
+
+function classifyForm(data) {
+  let score = 0;
+
+  if (["Muito pior", "Pior"].includes(data.get("improvement"))) score += 3;
+  if (data.get("improvement") === "Sem mudanças") score += 1;
+  if (data.get("adherence") === "Parcialmente") score += 1;
+  if (data.get("adherence") === "Não") score += 3;
+  if (data.get("sideEffects") === "Sim") score += 2;
+  if (["Muito ruim", "Ruim"].includes(data.get("sleep"))) score += 2;
+  if (data.get("sleep") === "Regular") score += 1;
+  if (["Muito piores", "Piores"].includes(data.get("symptoms"))) score += 3;
+  if (data.get("symptoms") === "Sem mudanças") score += 1;
+
+  if (score >= 5) return "Vermelho";
+  if (score >= 2) return "Amarelo";
+  return "Verde";
+}
+
+function buildSummary(data) {
+  const sideEffectText =
+    data.get("sideEffects") === "Sim"
+      ? `efeito colateral informado: ${data.get("sideEffectDetail") || "sem detalhe"}`
+      : "sem efeitos colaterais importantes";
+
+  return `Paciente relata evolução "${data.get("improvement")}", adesão "${data.get(
+    "adherence",
+  )}", sono "${data.get("sleep")}", sintomas "${data.get("symptoms")}" e ${sideEffectText}.`;
+}
+
+async function registerDecision(patientId, decision) {
+  patients = patients.map((patient) =>
+    patient.id === patientId
+      ? {
+          ...patient,
+          decision,
+          status: "Decisão médica registrada",
+          action: `${decision} definido pelo médico`,
+        }
+      : patient,
+  );
+  await savePatients();
+  render();
+}
+
+async function createFollowup(data, linkedPatient = null) {
+  const classification = classifyForm(data);
+  const today = new Date();
+
+  if (linkedPatient) {
+    const updatedPatient = {
+      ...linkedPatient,
+      name: data.get("name").trim(),
+      birthdate: data.get("birthdate"),
+      status: "Formulário respondido",
+      classification,
+      action: getActionForClassification(classification),
+      summary: buildSummary(data),
+      decision: "",
+    };
+
+    patients = patients.map((patient) =>
+      patient.id === linkedPatient.id ? updatedPatient : patient,
+    );
+    await savePatients();
+    return updatedPatient;
+  }
+
+  const patient = {
+    id: `patient-${Date.now()}`,
+    name: data.get("name").trim(),
+    phone: "",
+    birthdate: data.get("birthdate"),
+    doctor: "Aguardando triagem",
+    lastVisit: toDateInputValue(today),
+    returnDate: toDateInputValue(addDays(today, 15)),
+    status: "Formulário respondido",
+    classification,
+    action: getActionForClassification(classification),
+    summary: buildSummary(data),
+    decision: "",
+  };
+
+  patients = [patient, ...patients];
+  await savePatients();
+  return patient;
+}
+
+async function createRegisteredPatient(data) {
+  const patient = {
+    id: `patient-${Date.now()}`,
+    name: data.get("name").trim(),
+    phone: normalizePhone(data.get("phone")),
+    birthdate: data.get("birthdate"),
+    doctor: data.get("doctor").trim(),
+    lastVisit: data.get("lastVisit"),
+    returnDate: data.get("returnDate"),
+    status: "WhatsApp pendente",
+    classification: "Pendente",
+    action: "Enviar formulário de acompanhamento pelo WhatsApp",
+    summary: "Paciente cadastrado e aguardando resposta do formulário de acompanhamento.",
+    decision: "",
+  };
+
+  patients = [patient, ...patients];
+  await savePatients();
+  return patient;
+}
+
+function updateRegistrationPreview(patient) {
+  registrationMessage.textContent = buildWhatsAppMessage(patient);
+  registrationWhatsapp.href = getWhatsAppUrl(patient);
+  registrationWhatsapp.classList.remove("is-disabled");
+}
+
+document.querySelectorAll("[data-view], [data-view-link]").forEach((button) => {
+  button.addEventListener("click", () => {
+    setView(button.dataset.view || button.dataset.viewLink);
+  });
+});
+
+window.addEventListener("hashchange", openViewFromHash);
+
+document.querySelectorAll("[data-filter]").forEach((button) => {
+  button.addEventListener("click", () => {
+    state.classificationFilter = button.dataset.filter;
+    document.querySelectorAll("[data-filter]").forEach((item) => {
+      item.classList.toggle("is-active", item === button);
+      item.setAttribute("aria-selected", item === button ? "true" : "false");
+    });
+    render();
+  });
+});
+
+doctorFilter.addEventListener("change", (event) => {
+  state.doctorFilter = event.target.value;
+  renderTable();
+  renderDoctorCards();
+});
+
+dateFilter.addEventListener("change", (event) => {
+  state.dateFilter = event.target.value;
+  renderTable();
+  renderDoctorCards();
+});
+
+searchInput.addEventListener("input", (event) => {
+  state.search = event.target.value;
+  renderDoctorCards();
+});
+
+document.querySelector("#clear-filters").addEventListener("click", () => {
+  state.classificationFilter = "Todos";
+  state.doctorFilter = "Todos";
+  state.dateFilter = "";
+  doctorFilter.value = "Todos";
+  dateFilter.value = "";
+  document.querySelectorAll("[data-filter]").forEach((item) => {
+    const isActive = item.dataset.filter === "Todos";
+    item.classList.toggle("is-active", isActive);
+    item.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+  render();
+});
+
+sideEffects.addEventListener("change", (event) => {
+  sideEffectDetail.classList.toggle("is-hidden", event.target.value !== "Sim");
+});
+
+focusFormButton.addEventListener("click", () => {
+  form.querySelector("input, select, textarea").focus();
+});
+
+refreshButton.addEventListener("click", async () => {
+  patients = await loadPatients();
+  classificationOutput.textContent = "Dados atualizados.";
+  render();
+});
+
+registrationForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const data = new FormData(registrationForm);
+  const patient = await createRegisteredPatient(data);
+
+  updateRegistrationPreview(patient);
+  registrationOutput.textContent = "Paciente cadastrado. WhatsApp pronto para envio.";
+  render();
+  setView("dashboard");
+});
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const data = new FormData(form);
+  const linkedPatient = getLinkedPatient();
+  const patient = await createFollowup(data, linkedPatient);
+  classificationOutput.textContent = linkedPatient
+    ? `Classificação sugerida: ${patient.classification}. Cadastro de ${patient.name} atualizado.`
+    : `Classificação sugerida: ${patient.classification}. Paciente incluído no painel.`;
+  render();
+  setView("dashboard");
+});
+
+document.querySelectorAll("[data-filter]").forEach((item) => {
+  item.setAttribute("aria-selected", item.classList.contains("is-active") ? "true" : "false");
+});
+
+async function initializeApp() {
+  patients = await loadPatients();
+  render();
+  openViewFromHash();
+}
+
+initializeApp();

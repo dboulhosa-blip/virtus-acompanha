@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: virtus-acompanha
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: HOST=0.0.0.0 python server.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0

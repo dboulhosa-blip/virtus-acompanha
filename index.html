@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Virtus Acompanha</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Navegação principal">
+        <div class="brand">
+          <div class="brand-mark">V</div>
+          <div>
+            <strong>Virtus</strong>
+            <span>Acompanha</span>
+          </div>
+        </div>
+
+        <nav class="nav-list" aria-label="Áreas">
+          <button class="nav-item is-active" data-view="dashboard" type="button">
+            <span class="nav-icon" aria-hidden="true">01</span>
+            Operação
+          </button>
+          <button class="nav-item" data-view="doctor" type="button">
+            <span class="nav-icon" aria-hidden="true">02</span>
+            Médico
+          </button>
+          <button class="nav-item" data-view="registration" type="button">
+            <span class="nav-icon" aria-hidden="true">03</span>
+            Cadastro
+          </button>
+          <button class="nav-item" data-view="form" type="button">
+            <span class="nav-icon" aria-hidden="true">04</span>
+            Formulário
+          </button>
+        </nav>
+
+        <div class="sidebar-note">
+          <span>Próxima automação</span>
+          <strong>Dia 12 após consulta</strong>
+          <p>Envio de WhatsApp para pacientes elegíveis.</p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Monitoramento remoto entre consultas</p>
+            <h1>Virtus Acompanha</h1>
+          </div>
+          <div class="top-actions">
+            <button class="icon-button" id="refresh-data" type="button" aria-label="Atualizar dados" title="Atualizar dados">R</button>
+            <button class="primary-button" type="button" data-view-link="registration">Cadastrar paciente</button>
+          </div>
+        </header>
+
+        <section class="summary-grid" aria-label="Resumo">
+          <article class="metric">
+            <span>Monitorados</span>
+            <strong id="metric-total">0</strong>
+            <small>pacientes elegíveis</small>
+          </article>
+          <article class="metric metric-green">
+            <span>Verde</span>
+            <strong id="metric-green">0</strong>
+            <small>avaliar postergação</small>
+          </article>
+          <article class="metric metric-yellow">
+            <span>Amarelo</span>
+            <strong id="metric-yellow">0</strong>
+            <small>manter retorno</small>
+          </article>
+          <article class="metric metric-red">
+            <span>Vermelho</span>
+            <strong id="metric-red">0</strong>
+            <small>prioridade médica</small>
+          </article>
+        </section>
+
+        <section class="view is-visible" id="dashboard-view" aria-label="Painel administrativo">
+          <div class="section-header">
+            <div>
+              <h2>Painel administrativo</h2>
+              <p>Fila de acompanhamento organizada por prioridade clínica.</p>
+            </div>
+            <div class="segmented" role="tablist" aria-label="Filtro por classificação">
+              <button class="segment is-active" data-filter="Todos" type="button">Todos</button>
+              <button class="segment" data-filter="Verde" type="button">Verde</button>
+              <button class="segment" data-filter="Amarelo" type="button">Amarelo</button>
+              <button class="segment" data-filter="Vermelho" type="button">Vermelho</button>
+              <button class="segment" data-filter="Pendente" type="button">Pendente</button>
+            </div>
+          </div>
+
+          <div class="filters-row" aria-label="Filtros complementares">
+            <label>
+              Médico
+              <select id="doctor-filter">
+                <option value="Todos">Todos</option>
+              </select>
+            </label>
+            <label>
+              Data
+              <input id="date-filter" type="date" />
+            </label>
+            <button class="ghost-button" id="clear-filters" type="button">Limpar filtros</button>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Paciente</th>
+                  <th>Consulta</th>
+                  <th>Retorno</th>
+                  <th>Classificação</th>
+                  <th>Status</th>
+                  <th>Ação sugerida</th>
+                  <th>WhatsApp</th>
+                </tr>
+              </thead>
+              <tbody id="patient-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="view" id="doctor-view" aria-label="Tela do médico">
+          <div class="section-header">
+            <div>
+              <h2>Tela do médico</h2>
+              <p>Cards com resumo da IA e decisões possíveis para cada paciente.</p>
+            </div>
+            <label class="search-box">
+              Buscar
+              <input id="search-input" type="search" placeholder="Nome do paciente" />
+            </label>
+          </div>
+          <div class="patient-grid" id="doctor-cards"></div>
+        </section>
+
+        <section class="view" id="registration-view" aria-label="Cadastro do paciente">
+          <div class="form-layout">
+            <div class="message-preview">
+              <span class="chat-label">Mensagem para envio</span>
+              <div class="chat-bubble" id="registration-message">
+                Olá! Como parte do acompanhamento do Instituto Virtus, gostaríamos de saber como você está evoluindo. O preenchimento leva menos de um minuto.
+              </div>
+              <a class="whatsapp-button is-disabled" id="registration-whatsapp" href="#" target="_blank" rel="noreferrer">Abrir WhatsApp</a>
+            </div>
+
+            <form class="followup-form" id="registration-form">
+              <div class="section-header compact">
+                <div>
+                  <h2>Cadastro do paciente</h2>
+                  <p>Cadastre o paciente e gere a mensagem de WhatsApp para envio do formulário.</p>
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <label>
+                  Nome
+                  <input name="name" type="text" placeholder="Nome completo" required />
+                </label>
+                <label>
+                  WhatsApp
+                  <input name="phone" type="tel" placeholder="(91) 99999-9999" required />
+                </label>
+              </div>
+
+              <div class="form-grid">
+                <label>
+                  Data de nascimento
+                  <input name="birthdate" type="date" required />
+                </label>
+                <label>
+                  Médico
+                  <input name="doctor" type="text" placeholder="Nome do médico" required />
+                </label>
+              </div>
+
+              <div class="form-grid">
+                <label>
+                  Última consulta
+                  <input name="lastVisit" type="date" required />
+                </label>
+                <label>
+                  Retorno previsto
+                  <input name="returnDate" type="date" required />
+                </label>
+              </div>
+
+              <div class="form-actions">
+                <button class="primary-button" type="submit">Cadastrar e preparar WhatsApp</button>
+                <output id="registration-output" aria-live="polite"></output>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section class="view" id="form-view" aria-label="Formulário do paciente">
+          <div class="form-layout">
+            <div class="message-preview">
+              <span class="chat-label">WhatsApp automático</span>
+              <div class="chat-bubble">
+                Olá! Como parte do acompanhamento do Instituto Virtus, gostaríamos de saber como você está evoluindo. O preenchimento leva menos de um minuto.
+              </div>
+              <button class="whatsapp-button" type="button" data-focus-form>Responder formulário</button>
+            </div>
+
+            <form class="followup-form" id="followup-form">
+              <div class="section-header compact">
+                <div>
+                  <h2>Formulário de acompanhamento</h2>
+                  <p>As respostas abaixo simulam a análise automática de prioridade.</p>
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <label>
+                  Nome
+                  <input name="name" type="text" placeholder="Nome completo" required />
+                </label>
+                <label>
+                  Data de nascimento
+                  <input name="birthdate" type="date" required />
+                </label>
+              </div>
+
+              <label>
+                Desde a última consulta, como você avalia sua melhora?
+                <select name="improvement">
+                  <option>Muito pior</option>
+                  <option>Pior</option>
+                  <option>Sem mudanças</option>
+                  <option selected>Melhor</option>
+                  <option>Muito melhor</option>
+                </select>
+              </label>
+
+              <label>
+                Está utilizando as medicações conforme orientado?
+                <select name="adherence">
+                  <option selected>Sim</option>
+                  <option>Parcialmente</option>
+                  <option>Não</option>
+                </select>
+              </label>
+
+              <label>
+                Apresentou algum efeito colateral importante?
+                <select name="sideEffects" id="side-effects">
+                  <option selected>Não</option>
+                  <option>Sim</option>
+                </select>
+              </label>
+
+              <label class="is-hidden" id="side-effect-detail">
+                Descreva o efeito colateral
+                <textarea name="sideEffectDetail" rows="3" placeholder="Informe o que aconteceu"></textarea>
+              </label>
+
+              <label>
+                Como está seu sono?
+                <select name="sleep">
+                  <option>Muito ruim</option>
+                  <option>Ruim</option>
+                  <option>Regular</option>
+                  <option selected>Bom</option>
+                  <option>Muito bom</option>
+                </select>
+              </label>
+
+              <label>
+                Como estão os sintomas que motivaram seu tratamento?
+                <select name="symptoms">
+                  <option>Muito piores</option>
+                  <option>Piores</option>
+                  <option>Sem mudanças</option>
+                  <option selected>Melhores</option>
+                  <option>Muito melhores</option>
+                </select>
+              </label>
+
+              <label>
+                Gostaria de acrescentar alguma informação?
+                <textarea name="notes" rows="3" placeholder="Campo opcional"></textarea>
+              </label>
+
+              <div class="form-actions">
+                <button class="primary-button" type="submit">Enviar e classificar</button>
+                <output id="classification-output" aria-live="polite"></output>
+              </div>
+            </form>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
