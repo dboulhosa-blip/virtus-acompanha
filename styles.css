@@ -465,6 +465,21 @@ tbody tr:last-child td {
   line-height: 1.55;
 }
 
+.patient-note {
+  display: none;
+  margin: 0;
+  border-left: 4px solid var(--yellow);
+  border-radius: 6px;
+  background: var(--yellow-bg);
+  color: #664400;
+  line-height: 1.45;
+  padding: 10px 12px;
+}
+
+.patient-note.is-visible {
+  display: block;
+}
+
 .decision-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

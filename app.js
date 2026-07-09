@@ -297,6 +297,10 @@ function renderDoctorCards() {
       className: "ai-summary",
       text: patient.summary,
     });
+    const notes = createElement("p", {
+      className: patient.notes ? "patient-note is-visible" : "patient-note",
+      text: patient.notes ? `Informação adicional: ${patient.notes}` : "",
+    });
     const decisions = createElement("div", { className: "decision-grid" });
     const feedback = createElement("p", {
       className: patient.decision ? "decision-note is-visible" : "decision-note",
@@ -314,7 +318,7 @@ function renderDoctorCards() {
 
     patientInfo.append(name, meta);
     cardTop.append(patientInfo, badge);
-    card.append(cardTop, summary, decisions, feedback);
+    card.append(cardTop, summary, notes, decisions, feedback);
     doctorCards.append(card);
   });
 }
@@ -435,6 +439,7 @@ async function createFollowup(data, linkedPatient = null) {
       classification,
       action: getActionForClassification(classification),
       summary: buildSummary(data),
+      notes: data.get("notes")?.trim() || "",
       decision: "",
     };
 
@@ -457,6 +462,7 @@ async function createFollowup(data, linkedPatient = null) {
     classification,
     action: getActionForClassification(classification),
     summary: buildSummary(data),
+    notes: data.get("notes")?.trim() || "",
     decision: "",
   };
 
@@ -478,6 +484,7 @@ async function createRegisteredPatient(data) {
     classification: "Pendente",
     action: "Enviar formulário de acompanhamento pelo WhatsApp",
     summary: "Paciente cadastrado e aguardando resposta do formulário de acompanhamento.",
+    notes: "",
     decision: "",
   };
 
