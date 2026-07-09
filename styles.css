@@ -278,6 +278,10 @@ h2 {
   display: block;
 }
 
+.patient-form-header {
+  display: none;
+}
+
 .segmented {
   display: flex;
   flex-wrap: wrap;
@@ -585,6 +589,75 @@ tbody tr:last-child td {
 output {
   color: var(--blue-dark);
   font-weight: 800;
+}
+
+body.patient-mode {
+  background: #edf3f4;
+}
+
+body.patient-mode .app-shell {
+  display: block;
+  min-height: 100vh;
+}
+
+body.patient-mode .sidebar,
+body.patient-mode .topbar,
+body.patient-mode .summary-grid,
+body.patient-mode #dashboard-view,
+body.patient-mode #doctor-view,
+body.patient-mode #registration-view,
+body.patient-mode .message-preview {
+  display: none;
+}
+
+body.patient-mode .main {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+body.patient-mode #form-view {
+  width: min(760px, 100%);
+}
+
+body.patient-mode .patient-form-header {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+  text-align: center;
+}
+
+body.patient-mode .patient-brand {
+  justify-content: center;
+}
+
+body.patient-mode .patient-brand .brand-mark {
+  background: var(--blue-dark);
+  color: #ffffff;
+}
+
+body.patient-mode .patient-brand span {
+  color: var(--muted);
+}
+
+body.patient-mode .patient-form-header p {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 750;
+}
+
+body.patient-mode .form-layout {
+  display: block;
+}
+
+body.patient-mode .followup-form {
+  box-shadow: var(--shadow);
+}
+
+body.patient-mode .form-actions {
+  align-items: stretch;
+  flex-direction: column;
 }
 
 @media (max-width: 1100px) {

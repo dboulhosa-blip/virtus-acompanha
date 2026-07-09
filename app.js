@@ -336,6 +336,17 @@ function getLinkedPatient() {
   return patients.find((patient) => patient.id === patientId);
 }
 
+function isPatientFormLink() {
+  return (
+    window.location.hash === "#formulario-paciente" &&
+    new URLSearchParams(window.location.search).has("patient")
+  );
+}
+
+function updatePatientMode() {
+  document.body.classList.toggle("patient-mode", isPatientFormLink());
+}
+
 function applyLinkedPatientToForm() {
   const linkedPatient = getLinkedPatient();
 
@@ -347,6 +358,8 @@ function applyLinkedPatientToForm() {
 }
 
 function openViewFromHash() {
+  updatePatientMode();
+
   if (window.location.hash === "#formulario-paciente") {
     setView("form");
     applyLinkedPatientToForm();
@@ -556,6 +569,14 @@ form.addEventListener("submit", async (event) => {
     ? `Classificação sugerida: ${patient.classification}. Cadastro de ${patient.name} atualizado.`
     : `Classificação sugerida: ${patient.classification}. Paciente incluído no painel.`;
   render();
+
+  if (linkedPatient) {
+    classificationOutput.textContent =
+      "Resposta enviada. Obrigado por responder o acompanhamento.";
+    form.reset();
+    return;
+  }
+
   setView("dashboard");
 });
 
