@@ -399,10 +399,12 @@ function buildSummary(data) {
     data.get("sideEffects") === "Sim"
       ? `efeito colateral informado: ${data.get("sideEffectDetail") || "sem detalhe"}`
       : "sem efeitos colaterais importantes";
+  const notes = data.get("notes")?.trim();
+  const notesText = notes ? ` Informação adicional: ${notes}.` : "";
 
   return `Paciente relata evolução "${data.get("improvement")}", adesão "${data.get(
     "adherence",
-  )}", sono "${data.get("sleep")}", sintomas "${data.get("symptoms")}" e ${sideEffectText}.`;
+  )}", sono "${data.get("sleep")}", sintomas "${data.get("symptoms")}" e ${sideEffectText}.${notesText}`;
 }
 
 async function registerDecision(patientId, decision) {
