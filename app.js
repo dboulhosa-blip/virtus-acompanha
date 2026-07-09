@@ -135,7 +135,12 @@ function getPatientFormUrl(patient) {
 }
 
 function buildWhatsAppMessage(patient) {
-  return `Olá, ${patient.name}! Como parte do acompanhamento do Instituto Virtus, gostaríamos de saber como você está evoluindo desde a última consulta. Por favor, responda o formulário pelo link: ${getPatientFormUrl(patient)}`;
+  return [
+    `Olá, ${patient.name}!`,
+    "Como parte do acompanhamento do Instituto Virtus, gostaríamos de saber como você está evoluindo desde a última consulta.",
+    "Para responder, toque no link abaixo:",
+    getPatientFormUrl(patient),
+  ].join("\n\n");
 }
 
 function getWhatsAppUrl(patient) {
