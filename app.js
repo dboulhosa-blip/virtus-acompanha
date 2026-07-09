@@ -19,6 +19,9 @@ const searchInput = document.querySelector("#search-input");
 const sideEffects = document.querySelector("#side-effects");
 const sideEffectDetail = document.querySelector("#side-effect-detail");
 const form = document.querySelector("#followup-form");
+const responseStatus = document.querySelector("#response-status");
+const responseStatusTitle = document.querySelector("#response-status-title");
+const responseStatusMessage = document.querySelector("#response-status-message");
 const registrationForm = document.querySelector("#registration-form");
 const classificationOutput = document.querySelector("#classification-output");
 const registrationOutput = document.querySelector("#registration-output");
@@ -356,11 +359,42 @@ function updatePatientMode() {
   document.body.classList.toggle("patient-mode", isPatientFormLink());
 }
 
+function hasPatientAlreadyAnswered(patient) {
+  return patient?.status === "Formulário respondido";
+}
+
+function showResponseStatus(title, message) {
+  responseStatusTitle.textContent = title;
+  responseStatusMessage.textContent = message;
+  responseStatus.classList.remove("is-hidden");
+  form.classList.add("is-hidden");
+}
+
+function showResponseForm() {
+  responseStatus.classList.add("is-hidden");
+  form.classList.remove("is-hidden");
+}
+
 function applyLinkedPatientToForm() {
   const linkedPatient = getLinkedPatient();
 
-  if (!linkedPatient) return;
+  if (!linkedPatient) {
+    showResponseStatus(
+      "Link não encontrado",
+      "Não encontramos este acompanhamento. Entre em contato com a equipe do Instituto Virtus.",
+    );
+    return;
+  }
 
+  if (hasPatientAlreadyAnswered(linkedPatient)) {
+    showResponseStatus(
+      "Resposta já registrada",
+      "Obrigado. Seu acompanhamento já foi recebido pela equipe do Instituto Virtus.",
+    );
+    return;
+  }
+
+  showResponseForm();
   form.elements.name.value = linkedPatient.name;
   form.elements.birthdate.value = linkedPatient.birthdate || "";
   classificationOutput.textContent = `Resposta vinculada a ${linkedPatient.name}.`;
@@ -431,6 +465,8 @@ async function createFollowup(data, linkedPatient = null) {
   const today = new Date();
 
   if (linkedPatient) {
+    if (hasPatientAlreadyAnswered(linkedPatient)) return linkedPatient;
+
     const updatedPatient = {
       ...linkedPatient,
       name: data.get("name").trim(),
@@ -578,6 +614,15 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = new FormData(form);
   const linkedPatient = getLinkedPatient();
+
+  if (linkedPatient && hasPatientAlreadyAnswered(linkedPatient)) {
+    showResponseStatus(
+      "Resposta já registrada",
+      "Obrigado. Seu acompanhamento já foi recebido pela equipe do Instituto Virtus.",
+    );
+    return;
+  }
+
   const patient = await createFollowup(data, linkedPatient);
   classificationOutput.textContent = linkedPatient
     ? `Classificação sugerida: ${patient.classification}. Cadastro de ${patient.name} atualizado.`
@@ -585,8 +630,10 @@ form.addEventListener("submit", async (event) => {
   render();
 
   if (linkedPatient) {
-    classificationOutput.textContent =
-      "Resposta enviada. Obrigado por responder o acompanhamento.";
+    showResponseStatus(
+      "Resposta enviada",
+      "Obrigado por responder o acompanhamento. A equipe do Instituto Virtus já recebeu suas informações.",
+    );
     form.reset();
     return;
   }

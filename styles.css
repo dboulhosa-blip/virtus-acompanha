@@ -603,6 +603,20 @@ tbody tr:last-child td {
   padding: 20px;
 }
 
+.response-status {
+  min-height: 180px;
+  align-content: center;
+}
+
+.response-status h2 {
+  color: var(--blue-dark);
+}
+
+.response-status p {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
 .compact {
   display: block;
 }
