@@ -47,6 +47,47 @@ button {
   min-height: 100vh;
 }
 
+.login-screen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  background: #edf3f4;
+}
+
+.login-card {
+  display: grid;
+  width: min(420px, 100%);
+  gap: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  padding: 24px;
+}
+
+.login-brand .brand-mark {
+  background: var(--blue-dark);
+  color: #ffffff;
+}
+
+.login-brand span {
+  color: var(--muted);
+}
+
+.login-card h1 {
+  font-size: 1.8rem;
+}
+
+.login-card p {
+  margin-bottom: 0;
+  color: var(--muted);
+}
+
+body.login-required .app-shell {
+  display: none;
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;

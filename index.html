@@ -7,6 +7,28 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <section class="login-screen is-hidden" id="login-screen" aria-label="Login da equipe">
+      <form class="login-card" id="login-form">
+        <div class="brand login-brand">
+          <div class="brand-mark">V</div>
+          <div>
+            <strong>Virtus</strong>
+            <span>Acompanha</span>
+          </div>
+        </div>
+        <div>
+          <h1>Acesso da equipe</h1>
+          <p>Entre para acessar o painel administrativo.</p>
+        </div>
+        <label>
+          Senha
+          <input name="password" type="password" autocomplete="current-password" required />
+        </label>
+        <button class="primary-button" type="submit">Entrar</button>
+        <output id="login-output" aria-live="polite"></output>
+      </form>
+    </section>
+
     <div class="app-shell">
       <aside class="sidebar" aria-label="Navegação principal">
         <div class="brand">

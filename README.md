@@ -43,6 +43,20 @@ HOST=0.0.0.0 python server.py
 
 Depois de publicado, abra o link gerado pelo Render. Os links do WhatsApp passarão a usar esse domínio público.
 
+### Variáveis de ambiente
+
+Configure no Render:
+
+```text
+ADMIN_PASSWORD=uma-senha-forte-para-a-equipe
+SESSION_SECRET=um-texto-longo-aleatorio
+DATABASE_URL=url-do-banco-postgresql
+```
+
+- `ADMIN_PASSWORD` ativa o login do painel administrativo.
+- `SESSION_SECRET` protege a sessão do login.
+- `DATABASE_URL` ativa o banco online PostgreSQL.
+
 ### Importante
 
-O arquivo `data/patients.json` funciona para teste e demonstração. Em hospedagem gratuita, os dados podem não ser permanentes após reinícios do serviço. Para uso real com pacientes, o próximo passo é trocar esse arquivo por um banco online.
+Sem `DATABASE_URL`, o app usa `data/patients.json` como fallback para teste e demonstração. Em hospedagem gratuita, esses dados podem não ser permanentes após reinícios do serviço.

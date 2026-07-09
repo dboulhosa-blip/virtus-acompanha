@@ -12,6 +12,9 @@ const state = {
 };
 
 const tableBody = document.querySelector("#patient-table");
+const loginScreen = document.querySelector("#login-screen");
+const loginForm = document.querySelector("#login-form");
+const loginOutput = document.querySelector("#login-output");
 const doctorCards = document.querySelector("#doctor-cards");
 const doctorFilter = document.querySelector("#doctor-filter");
 const dateFilter = document.querySelector("#date-filter");
@@ -32,6 +35,7 @@ const focusFormButton = document.querySelector("[data-focus-form]");
 
 let patients = [];
 let isApiStorageAvailable = false;
+let isAuthenticated = false;
 
 function loadLocalPatients() {
   try {
@@ -52,13 +56,13 @@ async function loadPatients() {
   if (window.location.protocol === "file:") return loadLocalPatients();
 
   try {
-    const response = await fetch(API_URL);
+    const patientId = getPatientIdFromUrl();
+    const response = await fetch(patientId ? `${API_URL}/${patientId}` : API_URL);
     if (!response.ok) throw new Error("API indisponível");
     const apiPatients = await response.json();
     isApiStorageAvailable = true;
-    return Array.isArray(apiPatients) && apiPatients.length
-      ? apiPatients
-      : [...initialPatients];
+    if (patientId) return apiPatients?.id ? [apiPatients] : [];
+    return Array.isArray(apiPatients) ? apiPatients : [...initialPatients];
   } catch {
     isApiStorageAvailable = false;
     return loadLocalPatients();
@@ -98,6 +102,45 @@ function createElement(tag, options = {}) {
   if (options.rel) element.rel = options.rel;
 
   return element;
+}
+
+async function apiRequest(url, options = {}) {
+  const response = await fetch(url, {
+    credentials: "same-origin",
+    ...options,
+    headers: {
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(options.headers || {}),
+    },
+  });
+
+  if (!response.ok) throw new Error("Falha na comunicação com o servidor");
+  if (response.status === 204) return null;
+  return response.json();
+}
+
+function getPatientIdFromUrl() {
+  return new URLSearchParams(window.location.search).get("patient");
+}
+
+async function checkSession() {
+  if (window.location.protocol === "file:" || isPatientFormLink()) {
+    isAuthenticated = true;
+    return true;
+  }
+
+  try {
+    const session = await apiRequest("/api/session");
+    isAuthenticated = session.authenticated;
+    document.body.classList.toggle("login-required", !isAuthenticated);
+    loginScreen.classList.toggle("is-hidden", isAuthenticated);
+    return isAuthenticated;
+  } catch {
+    isAuthenticated = false;
+    document.body.classList.add("login-required");
+    loginScreen.classList.remove("is-hidden");
+    return false;
+  }
 }
 
 function formatDate(date) {
@@ -344,7 +387,7 @@ function setView(view) {
 }
 
 function getLinkedPatient() {
-  const patientId = new URLSearchParams(window.location.search).get("patient");
+  const patientId = getPatientIdFromUrl();
   return patients.find((patient) => patient.id === patientId);
 }
 
@@ -446,6 +489,16 @@ function buildSummary(data) {
 }
 
 async function registerDecision(patientId, decision) {
+  if (isApiStorageAvailable && window.location.protocol !== "file:") {
+    const updatedPatient = await apiRequest(`${API_URL}/${patientId}/decision`, {
+      body: JSON.stringify({ decision }),
+      method: "PATCH",
+    });
+    patients = patients.map((patient) => (patient.id === patientId ? updatedPatient : patient));
+    render();
+    return;
+  }
+
   patients = patients.map((patient) =>
     patient.id === patientId
       ? {
@@ -466,6 +519,17 @@ async function createFollowup(data, linkedPatient = null) {
 
   if (linkedPatient) {
     if (hasPatientAlreadyAnswered(linkedPatient)) return linkedPatient;
+
+    if (isApiStorageAvailable && window.location.protocol !== "file:") {
+      const updatedPatient = await apiRequest(`${API_URL}/${linkedPatient.id}/response`, {
+        body: JSON.stringify(Object.fromEntries(data.entries())),
+        method: "POST",
+      });
+      patients = patients.map((patient) =>
+        patient.id === linkedPatient.id ? { ...patient, ...updatedPatient } : patient,
+      );
+      return { ...linkedPatient, ...updatedPatient };
+    }
 
     const updatedPatient = {
       ...linkedPatient,
@@ -524,6 +588,15 @@ async function createRegisteredPatient(data) {
     decision: "",
   };
 
+  if (isApiStorageAvailable && window.location.protocol !== "file:") {
+    const savedPatient = await apiRequest(API_URL, {
+      body: JSON.stringify(patient),
+      method: "POST",
+    });
+    patients = [savedPatient, ...patients];
+    return savedPatient;
+  }
+
   patients = [patient, ...patients];
   await savePatients();
   return patient;
@@ -539,6 +612,27 @@ document.querySelectorAll("[data-view], [data-view-link]").forEach((button) => {
   button.addEventListener("click", () => {
     setView(button.dataset.view || button.dataset.viewLink);
   });
+});
+
+loginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  loginOutput.textContent = "";
+
+  try {
+    const data = new FormData(loginForm);
+    await apiRequest("/api/login", {
+      body: JSON.stringify({ password: data.get("password") }),
+      method: "POST",
+    });
+    loginForm.reset();
+    document.body.classList.remove("login-required");
+    loginScreen.classList.add("is-hidden");
+    isAuthenticated = true;
+    patients = await loadPatients();
+    render();
+  } catch {
+    loginOutput.textContent = "Senha inválida. Tente novamente.";
+  }
 });
 
 window.addEventListener("hashchange", openViewFromHash);
@@ -646,6 +740,9 @@ document.querySelectorAll("[data-filter]").forEach((item) => {
 });
 
 async function initializeApp() {
+  const canLoadPatients = await checkSession();
+  if (!canLoadPatients) return;
+
   patients = await loadPatients();
   render();
   openViewFromHash();
