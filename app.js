@@ -31,6 +31,7 @@ const registrationOutput = document.querySelector("#registration-output");
 const registrationMessage = document.querySelector("#registration-message");
 const registrationWhatsapp = document.querySelector("#registration-whatsapp");
 const refreshButton = document.querySelector("#refresh-data");
+const logoutButton = document.querySelector("#logout-button");
 const focusFormButton = document.querySelector("[data-focus-form]");
 
 let patients = [];
@@ -633,6 +634,21 @@ loginForm.addEventListener("submit", async (event) => {
   } catch {
     loginOutput.textContent = "Senha inválida. Tente novamente.";
   }
+});
+
+logoutButton.addEventListener("click", async () => {
+  try {
+    await apiRequest("/api/logout", { method: "POST" });
+  } catch {
+    // Even if the request fails, clear the interface so the user can try logging in again.
+  }
+
+  isAuthenticated = false;
+  patients = [];
+  loginForm.reset();
+  loginOutput.textContent = "";
+  document.body.classList.add("login-required");
+  loginScreen.classList.remove("is-hidden");
 });
 
 window.addEventListener("hashchange", openViewFromHash);

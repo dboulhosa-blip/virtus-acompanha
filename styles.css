@@ -242,6 +242,7 @@ h2 {
 .primary-button,
 .ghost-button,
 .icon-button,
+.logout-button,
 .whatsapp-button {
   min-height: 42px;
   border-radius: 8px;
@@ -269,6 +270,17 @@ h2 {
 .icon-button {
   width: 42px;
   padding: 0;
+}
+
+.logout-button {
+  border-color: var(--line);
+  background: #ffffff;
+  color: var(--muted);
+}
+
+.logout-button:hover {
+  border-color: #c8d2d8;
+  color: var(--ink);
 }
 
 .summary-grid {
