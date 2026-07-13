@@ -586,6 +586,45 @@ tbody tr:last-child td {
   color: var(--blue-dark);
 }
 
+.send-date {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--ink);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.schedule-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.schedule-pill.is-ready {
+  border-color: #bde7d2;
+  background: #e6f7f1;
+  color: #087444;
+}
+
+.schedule-pill.is-waiting {
+  border-color: #f0d89a;
+  background: #fff7df;
+  color: #8a5b00;
+}
+
+.schedule-pill.is-done {
+  border-color: #d7dee6;
+  background: #f5f7f9;
+  color: var(--muted);
+}
+
 .table-action {
   display: inline-flex;
   align-items: center;

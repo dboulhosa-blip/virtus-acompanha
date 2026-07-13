@@ -1,5 +1,7 @@
 const STORAGE_KEY = "virtus-acompanha-patients";
 const API_URL = "/api/patients";
+const FOLLOWUP_DELAY_DAYS = 12;
+const PUBLIC_APP_URL = "https://virtus-acompanha.onrender.com/";
 
 const initialPatients = [];
 
@@ -162,6 +164,47 @@ function addDays(date, days) {
   return nextDate;
 }
 
+function parseLocalDate(date) {
+  return date ? new Date(`${date}T12:00:00`) : null;
+}
+
+function getFollowupSendDate(patient) {
+  const lastVisit = parseLocalDate(patient.lastVisit);
+  if (!lastVisit || Number.isNaN(lastVisit.getTime())) return null;
+  return addDays(lastVisit, FOLLOWUP_DELAY_DAYS);
+}
+
+function getSendSchedule(patient) {
+  const sendDate = getFollowupSendDate(patient);
+
+  if (!sendDate) {
+    return {
+      dateText: "Data pendente",
+      label: "Aguardando consulta",
+      state: "waiting",
+    };
+  }
+
+  const dateText = formatDate(toDateInputValue(sendDate));
+
+  if (patient.status === "Formulário respondido") {
+    return {
+      dateText,
+      label: "Respondido",
+      state: "done",
+    };
+  }
+
+  const today = parseLocalDate(toDateInputValue(new Date()));
+  const isReady = sendDate <= today;
+
+  return {
+    dateText,
+    label: isReady ? "Pronto para envio" : `Aguardando dia ${dateText}`,
+    state: isReady ? "ready" : "waiting",
+  };
+}
+
 function badgeClass(classification) {
   return `badge badge-${classification.toLowerCase()}`;
 }
@@ -173,8 +216,18 @@ function normalizePhone(phone) {
   return digits;
 }
 
+function getPublicAppUrl() {
+  const isLocalAddress = ["", "localhost", "127.0.0.1"].includes(window.location.hostname);
+
+  if (window.location.protocol === "https:" && !isLocalAddress) {
+    return window.location.origin;
+  }
+
+  return PUBLIC_APP_URL;
+}
+
 function getPatientFormUrl(patient) {
-  const url = new URL(window.location.href);
+  const url = new URL(getPublicAppUrl());
   url.hash = "formulario-paciente";
 
   if (patient?.id) url.searchParams.set("patient", patient.id);
@@ -256,7 +309,7 @@ function renderTable() {
   if (!rows.length) {
     const row = createElement("tr");
     const cell = createElement("td", {
-      colSpan: 7,
+      colSpan: 8,
       text: "Nenhum paciente encontrado para os filtros selecionados.",
     });
     row.append(cell);
@@ -283,20 +336,32 @@ function renderTable() {
       className: patient.decision ? "status-pill is-decided" : "status-pill",
       text: patient.decision || patient.status,
     });
+    const schedule = getSendSchedule(patient);
+    const scheduleCell = createElement("td");
+    const scheduleDate = createElement("span", {
+      className: "send-date",
+      text: schedule.dateText,
+    });
+    const scheduleStatus = createElement("span", {
+      className: `schedule-pill is-${schedule.state}`,
+      text: schedule.label,
+    });
 
+    scheduleCell.append(scheduleDate, scheduleStatus);
     patientCell.append(name, meta);
     row.append(
       patientCell,
       createElement("td", { text: formatDate(patient.lastVisit) }),
+      scheduleCell,
       createElement("td", { text: formatDate(patient.returnDate) }),
       createElement("td"),
       createElement("td"),
       createElement("td", { text: patient.action }),
       createElement("td"),
     );
-    row.children[3].append(badge);
-    row.children[4].append(status);
-    row.children[6].append(createWhatsAppAction(patient));
+    row.children[4].append(badge);
+    row.children[5].append(status);
+    row.children[7].append(createWhatsAppAction(patient));
     tableBody.append(row);
   });
 }
