@@ -271,8 +271,10 @@ function getActionForClassification(classification) {
 
 function getFilteredPatients({ includeSearch = false } = {}) {
   return patients.filter((patient) => {
+    const schedule = getSendSchedule(patient);
     const matchesClassification =
       state.classificationFilter === "Todos" ||
+      (state.classificationFilter === "Pronto para envio" && schedule.state === "ready") ||
       patient.classification === state.classificationFilter;
     const matchesDoctor =
       state.doctorFilter === "Todos" || patient.doctor === state.doctorFilter;
