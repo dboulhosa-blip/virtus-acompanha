@@ -164,12 +164,12 @@ function addDays(date, days) {
   return nextDate;
 }
 
-function moveToNextBusinessDay(date) {
+function moveToPreviousBusinessDay(date) {
   const nextDate = new Date(date);
   const dayOfWeek = nextDate.getDay();
 
-  if (dayOfWeek === 6) nextDate.setDate(nextDate.getDate() + 2);
-  if (dayOfWeek === 0) nextDate.setDate(nextDate.getDate() + 1);
+  if (dayOfWeek === 6) nextDate.setDate(nextDate.getDate() - 1);
+  if (dayOfWeek === 0) nextDate.setDate(nextDate.getDate() - 2);
 
   return nextDate;
 }
@@ -181,7 +181,7 @@ function parseLocalDate(date) {
 function getFollowupSendDate(patient) {
   const lastVisit = parseLocalDate(patient.lastVisit);
   if (!lastVisit || Number.isNaN(lastVisit.getTime())) return null;
-  return moveToNextBusinessDay(addDays(lastVisit, FOLLOWUP_DELAY_DAYS));
+  return moveToPreviousBusinessDay(addDays(lastVisit, FOLLOWUP_DELAY_DAYS));
 }
 
 function getSendSchedule(patient) {
