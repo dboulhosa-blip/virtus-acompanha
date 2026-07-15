@@ -586,6 +586,12 @@ tbody tr:last-child td {
   color: var(--blue-dark);
 }
 
+.status-pill.is-sent {
+  border-color: #c8d7ed;
+  background: #edf4ff;
+  color: #2f5f9a;
+}
+
 .send-date {
   display: block;
   margin-bottom: 8px;

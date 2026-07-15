@@ -205,6 +205,14 @@ function getSendSchedule(patient) {
     };
   }
 
+  if (patient.status === "WhatsApp enviado") {
+    return {
+      dateText,
+      label: "Enviado",
+      state: "done",
+    };
+  }
+
   const today = parseLocalDate(toDateInputValue(new Date()));
   const isReady = sendDate <= today;
 
@@ -274,7 +282,9 @@ function getFilteredPatients({ includeSearch = false } = {}) {
     const schedule = getSendSchedule(patient);
     const matchesClassification =
       state.classificationFilter === "Todos" ||
-      (state.classificationFilter === "Pronto para envio" && schedule.state === "ready") ||
+      (state.classificationFilter === "Pronto para envio" &&
+        schedule.state === "ready" &&
+        patient.status !== "WhatsApp enviado") ||
       patient.classification === state.classificationFilter;
     const matchesDoctor =
       state.doctorFilter === "Todos" || patient.doctor === state.doctorFilter;
@@ -285,6 +295,12 @@ function getFilteredPatients({ includeSearch = false } = {}) {
 
     return matchesClassification && matchesDoctor && matchesDate && matchesSearch;
   });
+}
+
+function statusPillClass(patient) {
+  if (patient.decision) return "status-pill is-decided";
+  if (patient.status === "WhatsApp enviado") return "status-pill is-sent";
+  return "status-pill";
 }
 
 function renderMetrics() {
@@ -345,7 +361,7 @@ function renderTable() {
       text: patient.classification,
     });
     const status = createElement("span", {
-      className: patient.decision ? "status-pill is-decided" : "status-pill",
+      className: statusPillClass(patient),
       text: patient.decision || patient.status,
     });
     const schedule = getSendSchedule(patient);
@@ -383,13 +399,16 @@ function createWhatsAppAction(patient) {
     return createElement("span", { className: "patient-meta", text: "Sem telefone" });
   }
 
-  return createElement("a", {
+  const action = createElement("a", {
     className: "table-action",
     href: getWhatsAppUrl(patient),
     target: "_blank",
     rel: "noreferrer",
-    text: "Enviar formulário",
+    text: patient.status === "WhatsApp enviado" ? "Reenviar formulário" : "Enviar formulário",
   });
+
+  action.addEventListener("click", () => markWhatsAppSent(patient.id));
+  return action;
 }
 
 function renderDoctorCards() {
@@ -587,6 +606,32 @@ async function registerDecision(patientId, decision) {
         }
       : patient,
   );
+  await savePatients();
+  render();
+}
+
+async function markWhatsAppSent(patientId) {
+  const updatedPatient = {
+    ...patients.find((patient) => patient.id === patientId),
+    status: "WhatsApp enviado",
+    action: "Aguardando resposta do formulário",
+  };
+
+  if (isApiStorageAvailable && window.location.protocol !== "file:") {
+    try {
+      const savedPatient = await apiRequest(`${API_URL}/${patientId}/sent`, {
+        method: "PATCH",
+      });
+      patients = patients.map((patient) => (patient.id === patientId ? savedPatient : patient));
+      render();
+      return;
+    } catch {
+      classificationOutput.textContent = "Não foi possível marcar o WhatsApp como enviado.";
+      return;
+    }
+  }
+
+  patients = patients.map((patient) => (patient.id === patientId ? updatedPatient : patient));
   await savePatients();
   render();
 }

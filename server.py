@@ -145,6 +145,33 @@ class VirtusHandler(SimpleHTTPRequestHandler):
             self.send_json(updated_patient)
             return
 
+        if path.startswith("/api/patients/") and path.endswith("/sent"):
+            if not self.require_auth():
+                return
+
+            patient_id = path.removeprefix("/api/patients/").removesuffix("/sent")
+            patients = read_patients()
+            updated_patient = None
+            next_patients = []
+            for patient in patients:
+                if patient.get("id") == patient_id:
+                    updated_patient = {
+                        **patient,
+                        "status": "WhatsApp enviado",
+                        "action": "Aguardando resposta do formulário",
+                    }
+                    next_patients.append(updated_patient)
+                else:
+                    next_patients.append(patient)
+
+            if not updated_patient:
+                self.send_error_json(404, "Paciente não encontrado")
+                return
+
+            write_patients(next_patients)
+            self.send_json(updated_patient)
+            return
+
         self.send_error_json(404, "Rota não encontrada")
 
     def do_PUT(self):
