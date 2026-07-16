@@ -1,12 +1,14 @@
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from http import cookies
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 import base64
 import hashlib
 import hmac
 import json
 import os
+import re
+import secrets
 import time
 
 
@@ -17,6 +19,12 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 SESSION_SECRET = os.environ.get("SESSION_SECRET") or ADMIN_PASSWORD or "virtus-local-dev"
 SESSION_MAX_AGE = 60 * 60 * 12
+MAX_BODY_BYTES = 64 * 1024
+LOGIN_WINDOW_SECONDS = 15 * 60
+LOGIN_LOCK_SECONDS = 15 * 60
+MAX_LOGIN_ATTEMPTS = 5
+LOGIN_ATTEMPTS = {}
+PATIENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
 
 
 class VirtusHandler(SimpleHTTPRequestHandler):
@@ -39,6 +47,9 @@ class VirtusHandler(SimpleHTTPRequestHandler):
             if not patient:
                 self.send_error_json(404, "Paciente não encontrado")
                 return
+            if not self.valid_patient_access(patient):
+                self.send_error_json(403, "Link inválido")
+                return
             self.send_json(public_patient(patient))
             return
 
@@ -52,10 +63,16 @@ class VirtusHandler(SimpleHTTPRequestHandler):
             if payload is None:
                 return
 
+            if is_login_blocked(self.client_ip()):
+                self.send_error_json(429, "Muitas tentativas. Aguarde alguns minutos.")
+                return
+
             if not login_required() or payload.get("password") == ADMIN_PASSWORD:
+                clear_login_attempts(self.client_ip())
                 self.send_login_success()
                 return
 
+            register_login_failure(self.client_ip())
             self.send_error_json(401, "Senha inválida")
             return
 
@@ -68,6 +85,8 @@ class VirtusHandler(SimpleHTTPRequestHandler):
         if path == "/api/patients":
             if not self.require_auth():
                 return
+            if not self.require_same_origin():
+                return
             patient = self.read_json_body()
             if patient is None:
                 return
@@ -75,6 +94,7 @@ class VirtusHandler(SimpleHTTPRequestHandler):
                 self.send_error_json(400, "Paciente inválido")
                 return
 
+            patient = prepare_registered_patient(patient)
             patients = read_patients()
             patients.insert(0, patient)
             write_patients(patients)
@@ -91,6 +111,9 @@ class VirtusHandler(SimpleHTTPRequestHandler):
             patient = next((item for item in patients if item.get("id") == patient_id), None)
             if not patient:
                 self.send_error_json(404, "Paciente não encontrado")
+                return
+            if not self.valid_patient_access(patient):
+                self.send_error_json(403, "Link inválido")
                 return
             if patient.get("status") == "Formulário respondido":
                 self.send_json(public_patient(patient))
@@ -110,6 +133,8 @@ class VirtusHandler(SimpleHTTPRequestHandler):
 
         if path.startswith("/api/patients/") and path.endswith("/decision"):
             if not self.require_auth():
+                return
+            if not self.require_same_origin():
                 return
 
             patient_id = path.removeprefix("/api/patients/").removesuffix("/decision")
@@ -148,6 +173,8 @@ class VirtusHandler(SimpleHTTPRequestHandler):
         if path.startswith("/api/patients/") and path.endswith("/sent"):
             if not self.require_auth():
                 return
+            if not self.require_same_origin():
+                return
 
             patient_id = path.removeprefix("/api/patients/").removesuffix("/sent")
             patients = read_patients()
@@ -182,6 +209,8 @@ class VirtusHandler(SimpleHTTPRequestHandler):
 
         if not self.require_auth():
             return
+        if not self.require_same_origin():
+            return
 
         patients = self.read_json_body()
         if patients is None:
@@ -195,6 +224,10 @@ class VirtusHandler(SimpleHTTPRequestHandler):
 
     def read_json_body(self):
         length = int(self.headers.get("Content-Length", "0"))
+        if length > MAX_BODY_BYTES:
+            self.send_error_json(413, "Requisição muito grande")
+            return None
+
         payload = self.rfile.read(length)
 
         try:
@@ -210,6 +243,19 @@ class VirtusHandler(SimpleHTTPRequestHandler):
         self.send_error_json(401, "Login obrigatório")
         return False
 
+    def require_same_origin(self):
+        origin = self.headers.get("Origin") or self.headers.get("Referer")
+        if not origin:
+            return True
+
+        request_host = self.headers.get("Host", "")
+        origin_host = urlparse(origin).netloc
+        if origin_host == request_host:
+            return True
+
+        self.send_error_json(403, "Origem não autorizada")
+        return False
+
     def is_authenticated(self):
         if not login_required():
             return True
@@ -218,6 +264,21 @@ class VirtusHandler(SimpleHTTPRequestHandler):
         request_cookies = cookies.SimpleCookie(cookie_header)
         session = request_cookies.get("virtus_session")
         return bool(session and verify_session_token(session.value))
+
+    def client_ip(self):
+        forwarded_for = self.headers.get("X-Forwarded-For", "")
+        return (forwarded_for.split(",")[0].strip() or self.client_address[0])
+
+    def valid_patient_access(self, patient):
+        expected_token = patient.get("formToken")
+        request_token = self.query_params().get("token", "")
+        if not expected_token:
+            return True
+        return hmac.compare_digest(str(expected_token), str(request_token))
+
+    def query_params(self):
+        parsed = urlparse(self.path)
+        return {key: values[0] for key, values in parse_qs(parsed.query).items()}
 
     def send_login_success(self):
         self.send_response(200)
@@ -233,6 +294,7 @@ class VirtusHandler(SimpleHTTPRequestHandler):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -241,13 +303,61 @@ class VirtusHandler(SimpleHTTPRequestHandler):
         body = json.dumps({"error": message}, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
+    def end_headers(self):
+        self.send_security_headers()
+        super().end_headers()
+
+    def send_security_headers(self):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+            "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+        )
+
 
 def login_required():
     return bool(ADMIN_PASSWORD)
+
+
+def register_login_failure(client_ip):
+    now = time.time()
+    attempts = [
+        attempt for attempt in LOGIN_ATTEMPTS.get(client_ip, {}).get("attempts", [])
+        if now - attempt < LOGIN_WINDOW_SECONDS
+    ]
+    attempts.append(now)
+    LOGIN_ATTEMPTS[client_ip] = {"attempts": attempts}
+
+    if len(attempts) >= MAX_LOGIN_ATTEMPTS:
+        LOGIN_ATTEMPTS[client_ip]["locked_until"] = now + LOGIN_LOCK_SECONDS
+
+
+def is_login_blocked(client_ip):
+    record = LOGIN_ATTEMPTS.get(client_ip)
+    if not record:
+        return False
+
+    locked_until = record.get("locked_until", 0)
+    if locked_until and locked_until > time.time():
+        return True
+
+    if locked_until:
+        clear_login_attempts(client_ip)
+    return False
+
+
+def clear_login_attempts(client_ip):
+    LOGIN_ATTEMPTS.pop(client_ip, None)
 
 
 def create_session_token():
@@ -261,14 +371,15 @@ def verify_session_token(token):
     try:
         decoded = base64.urlsafe_b64decode(token.encode("utf-8")).decode("utf-8")
         user, expires, signature = decoded.split(":", 2)
-    except ValueError:
+        is_active = int(expires) > int(time.time())
+    except (ValueError, TypeError):
         return False
 
     payload = f"{user}:{expires}"
     if not hmac.compare_digest(signature, sign(payload)):
         return False
 
-    return user == "admin" and int(expires) > int(time.time())
+    return user == "admin" and is_active
 
 
 def sign(payload):
@@ -276,11 +387,39 @@ def sign(payload):
 
 
 def session_cookie(token):
-    return f"virtus_session={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={SESSION_MAX_AGE}; Secure"
+    return f"virtus_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_MAX_AGE}; Secure"
 
 
 def expired_session_cookie():
-    return "virtus_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0; Secure"
+    return "virtus_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0; Secure"
+
+
+def clean_text(value, max_length):
+    return str(value or "").strip()[:max_length]
+
+
+def prepare_registered_patient(patient):
+    patient_id = clean_text(patient.get("id"), 80)
+    if not PATIENT_ID_PATTERN.match(patient_id):
+        patient_id = f"patient-{secrets.token_urlsafe(12)}"
+
+    return {
+        **patient,
+        "id": patient_id,
+        "name": clean_text(patient.get("name"), 120),
+        "phone": re.sub(r"\D", "", str(patient.get("phone", "")))[:16],
+        "birthdate": clean_text(patient.get("birthdate"), 10),
+        "doctor": clean_text(patient.get("doctor"), 120),
+        "lastVisit": clean_text(patient.get("lastVisit"), 10),
+        "returnDate": clean_text(patient.get("returnDate"), 10),
+        "status": "WhatsApp pendente",
+        "classification": "Pendente",
+        "action": "Enviar formulário de acompanhamento pelo WhatsApp",
+        "summary": "Paciente cadastrado e aguardando resposta do formulário de acompanhamento.",
+        "notes": "",
+        "decision": "",
+        "formToken": patient.get("formToken") or secrets.token_urlsafe(24),
+    }
 
 
 def public_patient(patient):

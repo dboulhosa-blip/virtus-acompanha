@@ -60,7 +60,7 @@ async function loadPatients() {
 
   try {
     const patientId = getPatientIdFromUrl();
-    const response = await fetch(patientId ? `${API_URL}/${patientId}` : API_URL);
+    const response = await fetch(patientId ? patientApiUrl(patientId) : API_URL);
     if (!response.ok) throw new Error("API indisponível");
     const apiPatients = await response.json();
     isApiStorageAvailable = true;
@@ -124,6 +124,17 @@ async function apiRequest(url, options = {}) {
 
 function getPatientIdFromUrl() {
   return new URLSearchParams(window.location.search).get("patient");
+}
+
+function getPatientTokenFromUrl() {
+  return new URLSearchParams(window.location.search).get("token");
+}
+
+function patientApiUrl(patientId, suffix = "") {
+  const url = new URL(`${API_URL}/${patientId}${suffix}`, window.location.origin);
+  const token = getPatientTokenFromUrl();
+  if (token) url.searchParams.set("token", token);
+  return `${url.pathname}${url.search}`;
 }
 
 async function checkSession() {
@@ -249,6 +260,7 @@ function getPatientFormUrl(patient) {
   url.hash = "formulario-paciente";
 
   if (patient?.id) url.searchParams.set("patient", patient.id);
+  if (patient?.formToken) url.searchParams.set("token", patient.formToken);
   return url.toString();
 }
 
@@ -644,7 +656,7 @@ async function createFollowup(data, linkedPatient = null) {
     if (hasPatientAlreadyAnswered(linkedPatient)) return linkedPatient;
 
     if (isApiStorageAvailable && window.location.protocol !== "file:") {
-      const updatedPatient = await apiRequest(`${API_URL}/${linkedPatient.id}/response`, {
+      const updatedPatient = await apiRequest(patientApiUrl(linkedPatient.id, "/response"), {
         body: JSON.stringify(Object.fromEntries(data.entries())),
         method: "POST",
       });
@@ -697,6 +709,7 @@ async function createFollowup(data, linkedPatient = null) {
 async function createRegisteredPatient(data) {
   const patient = {
     id: `patient-${Date.now()}`,
+    formToken: createFormToken(),
     name: data.get("name").trim(),
     phone: normalizePhone(data.get("phone")),
     birthdate: data.get("birthdate"),
@@ -723,6 +736,16 @@ async function createRegisteredPatient(data) {
   patients = [patient, ...patients];
   await savePatients();
   return patient;
+}
+
+function createFormToken() {
+  if (window.crypto?.getRandomValues) {
+    const randomBytes = new Uint8Array(24);
+    window.crypto.getRandomValues(randomBytes);
+    return Array.from(randomBytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function updateRegistrationPreview(patient) {
