@@ -68,12 +68,16 @@ async function loadPatients() {
     return Array.isArray(apiPatients) ? apiPatients : [...initialPatients];
   } catch {
     isApiStorageAvailable = false;
-    return loadLocalPatients();
+    if (getPatientIdFromUrl()) return [];
+    classificationOutput.textContent = "Não foi possível carregar os dados do servidor.";
+    return [];
   }
 }
 
 async function savePatients() {
-  saveLocalPatients();
+  if (window.location.protocol === "file:") {
+    saveLocalPatients();
+  }
 
   if (!isApiStorageAvailable) return;
 

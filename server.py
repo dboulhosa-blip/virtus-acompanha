@@ -17,7 +17,14 @@ DATA_DIR = ROOT / "data"
 PATIENTS_FILE = DATA_DIR / "patients.json"
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
-SESSION_SECRET = os.environ.get("SESSION_SECRET") or ADMIN_PASSWORD or "virtus-local-dev"
+IS_PRODUCTION = bool(
+    os.environ.get("RENDER") or
+    os.environ.get("RENDER_SERVICE_ID") or
+    os.environ.get("HOST") == "0.0.0.0"
+)
+SESSION_SECRET = os.environ.get("SESSION_SECRET") or (
+    secrets.token_urlsafe(32) if not IS_PRODUCTION else ""
+)
 SESSION_MAX_AGE = 60 * 60 * 12
 MAX_BODY_BYTES = 64 * 1024
 LOGIN_WINDOW_SECONDS = 15 * 60
@@ -326,7 +333,23 @@ class VirtusHandler(SimpleHTTPRequestHandler):
 
 
 def login_required():
-    return bool(ADMIN_PASSWORD)
+    return True if IS_PRODUCTION else bool(ADMIN_PASSWORD)
+
+
+def validate_security_configuration():
+    errors = []
+
+    if IS_PRODUCTION and not ADMIN_PASSWORD:
+        errors.append("ADMIN_PASSWORD é obrigatório em produção")
+    if IS_PRODUCTION and len(SESSION_SECRET) < 32:
+        errors.append("SESSION_SECRET deve ter pelo menos 32 caracteres em produção")
+    if IS_PRODUCTION and not DATABASE_URL:
+        errors.append("DATABASE_URL é obrigatório em produção")
+
+    if errors:
+        for error in errors:
+            print(f"Erro de configuração de segurança: {error}")
+        raise SystemExit(1)
 
 
 def register_login_failure(client_ip):
@@ -580,6 +603,7 @@ def write_patients_to_database(patients):
 
 
 if __name__ == "__main__":
+    validate_security_configuration()
     ensure_database()
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "4176"))
