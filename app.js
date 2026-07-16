@@ -55,8 +55,22 @@ function saveLocalPatients() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(patients));
 }
 
+function isLocalFallbackAllowed() {
+  return (
+    window.location.protocol === "file:" ||
+    ["localhost", "127.0.0.1", ""].includes(window.location.hostname)
+  );
+}
+
+function showOperationalError(message) {
+  classificationOutput.textContent = message;
+  registrationOutput.textContent = message;
+}
+
 async function loadPatients() {
-  if (window.location.protocol === "file:") return loadLocalPatients();
+  if (isLocalFallbackAllowed() && window.location.protocol === "file:") {
+    return loadLocalPatients();
+  }
 
   try {
     const patientId = getPatientIdFromUrl();
@@ -68,18 +82,24 @@ async function loadPatients() {
     return Array.isArray(apiPatients) ? apiPatients : [...initialPatients];
   } catch {
     isApiStorageAvailable = false;
-    if (getPatientIdFromUrl()) return [];
-    classificationOutput.textContent = "Não foi possível carregar os dados do servidor.";
+    if (getPatientIdFromUrl()) {
+      classificationOutput.textContent = "Não foi possível validar este link no servidor.";
+      return [];
+    }
+    showOperationalError("Não foi possível carregar os dados do servidor.");
     return [];
   }
 }
 
 async function savePatients() {
-  if (window.location.protocol === "file:") {
+  if (isLocalFallbackAllowed() && window.location.protocol === "file:") {
     saveLocalPatients();
+    return;
   }
 
-  if (!isApiStorageAvailable) return;
+  if (!isApiStorageAvailable) {
+    throw new Error("API indisponível");
+  }
 
   try {
     const response = await fetch(API_URL, {
@@ -93,6 +113,7 @@ async function savePatients() {
     if (!response.ok) throw new Error("Falha ao salvar na API");
   } catch {
     isApiStorageAvailable = false;
+    throw new Error("Falha ao salvar na API");
   }
 }
 
@@ -612,6 +633,11 @@ async function registerDecision(patientId, decision) {
     return;
   }
 
+  if (!isLocalFallbackAllowed()) {
+    classificationOutput.textContent = "Servidor indisponível. A decisão não foi salva.";
+    return;
+  }
+
   patients = patients.map((patient) =>
     patient.id === patientId
       ? {
@@ -647,9 +673,18 @@ async function markWhatsAppSent(patientId) {
     }
   }
 
-  patients = patients.map((patient) => (patient.id === patientId ? updatedPatient : patient));
-  await savePatients();
-  render();
+  if (!isLocalFallbackAllowed()) {
+    classificationOutput.textContent = "Servidor indisponível. O envio não foi marcado.";
+    return;
+  }
+
+  try {
+    patients = patients.map((patient) => (patient.id === patientId ? updatedPatient : patient));
+    await savePatients();
+    render();
+  } catch {
+    classificationOutput.textContent = "Não foi possível marcar o WhatsApp como enviado.";
+  }
 }
 
 async function createFollowup(data, linkedPatient = null) {
@@ -682,6 +717,10 @@ async function createFollowup(data, linkedPatient = null) {
       decision: "",
     };
 
+    if (!isLocalFallbackAllowed()) {
+      throw new Error("Servidor indisponível");
+    }
+
     patients = patients.map((patient) =>
       patient.id === linkedPatient.id ? updatedPatient : patient,
     );
@@ -704,6 +743,10 @@ async function createFollowup(data, linkedPatient = null) {
     notes: data.get("notes")?.trim() || "",
     decision: "",
   };
+
+  if (!isLocalFallbackAllowed()) {
+    throw new Error("Servidor indisponível");
+  }
 
   patients = [patient, ...patients];
   await savePatients();
@@ -737,6 +780,10 @@ async function createRegisteredPatient(data) {
     return savedPatient;
   }
 
+  if (!isLocalFallbackAllowed()) {
+    throw new Error("Servidor indisponível");
+  }
+
   patients = [patient, ...patients];
   await savePatients();
   return patient;
@@ -749,7 +796,7 @@ function createFormToken() {
     return Array.from(randomBytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
   }
 
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  throw new Error("Gerador seguro indisponível");
 }
 
 function updateRegistrationPreview(patient) {
@@ -853,20 +900,30 @@ focusFormButton.addEventListener("click", () => {
 });
 
 refreshButton.addEventListener("click", async () => {
-  patients = await loadPatients();
-  classificationOutput.textContent = "Dados atualizados.";
-  render();
+  try {
+    patients = await loadPatients();
+    classificationOutput.textContent = isApiStorageAvailable || isLocalFallbackAllowed()
+      ? "Dados atualizados."
+      : "Não foi possível atualizar os dados do servidor.";
+    render();
+  } catch {
+    classificationOutput.textContent = "Não foi possível atualizar os dados.";
+  }
 });
 
 registrationForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = new FormData(registrationForm);
-  const patient = await createRegisteredPatient(data);
 
-  updateRegistrationPreview(patient);
-  registrationOutput.textContent = "Paciente cadastrado. WhatsApp pronto para envio.";
-  render();
-  setView("dashboard");
+  try {
+    const patient = await createRegisteredPatient(data);
+    updateRegistrationPreview(patient);
+    registrationOutput.textContent = "Paciente cadastrado. WhatsApp pronto para envio.";
+    render();
+    setView("dashboard");
+  } catch {
+    registrationOutput.textContent = "Não foi possível salvar. Verifique o servidor e tente novamente.";
+  }
 });
 
 form.addEventListener("submit", async (event) => {
@@ -882,11 +939,17 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
-  const patient = await createFollowup(data, linkedPatient);
-  classificationOutput.textContent = linkedPatient
-    ? `Classificação sugerida: ${patient.classification}. Cadastro de ${patient.name} atualizado.`
-    : `Classificação sugerida: ${patient.classification}. Paciente incluído no painel.`;
-  render();
+  let patient;
+  try {
+    patient = await createFollowup(data, linkedPatient);
+    classificationOutput.textContent = linkedPatient
+      ? `Classificação sugerida: ${patient.classification}. Cadastro de ${patient.name} atualizado.`
+      : `Classificação sugerida: ${patient.classification}. Paciente incluído no painel.`;
+    render();
+  } catch {
+    classificationOutput.textContent = "Não foi possível enviar a resposta. Tente novamente.";
+    return;
+  }
 
   if (linkedPatient) {
     showResponseStatus(

@@ -51,12 +51,36 @@ Configure no Render:
 ADMIN_PASSWORD=uma-senha-forte-para-a-equipe
 SESSION_SECRET=um-texto-longo-aleatorio
 DATABASE_URL=url-do-banco-postgresql
+ALLOWED_ORIGINS=https://seu-dominio.example
 ```
 
-- `ADMIN_PASSWORD` ativa o login do painel administrativo.
-- `SESSION_SECRET` protege a sessão do login.
-- `DATABASE_URL` ativa o banco online PostgreSQL.
+- `ADMIN_PASSWORD` ativa o login obrigatório do painel administrativo em produção.
+- `SESSION_SECRET` protege a sessão do login. Use pelo menos 32 caracteres aleatórios.
+- `DATABASE_URL` ativa o banco online PostgreSQL e é obrigatório em produção.
+- `ALLOWED_ORIGINS` é opcional e permite domínios adicionais para ações autenticadas quando houver domínio customizado.
 
 ### Importante
 
-Sem `DATABASE_URL`, o app usa `data/patients.json` como fallback para teste e demonstração. Em hospedagem gratuita, esses dados podem não ser permanentes após reinícios do serviço.
+Sem `DATABASE_URL`, o app só usa `data/patients.json` em desenvolvimento local. Em produção, a aplicação encerra a inicialização se `ADMIN_PASSWORD`, `SESSION_SECRET` ou `DATABASE_URL` não estiverem configurados.
+
+O servidor só publica `index.html`, `styles.css` e `app.js`. Arquivos em `data/`, planilhas em `outputs/` e arquivos internos não são servidos pelo app.
+
+## Controles de segurança aplicados
+
+- Login obrigatório em produção.
+- Sessão assinada com cookie `HttpOnly`, `SameSite=Strict` e `Secure` em produção.
+- Rate limit simples contra força bruta no login.
+- Limite de tamanho de requisição JSON.
+- Validação de origem para ações que alteram dados.
+- Tokens aleatórios nos links públicos dos formulários.
+- Validação e normalização dos campos de pacientes e respostas.
+- Headers de segurança: CSP, HSTS em produção, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` e `Permissions-Policy`.
+- Logs com parâmetros sensíveis redigidos.
+- Falha segura em produção quando banco ou segredos essenciais não estão configurados.
+
+## Riscos residuais
+
+- O projeto ainda precisa de uma conta de banco PostgreSQL gerenciada, backup e política de retenção.
+- O controle de acesso é por uma senha administrativa única; para uso real com múltiplos profissionais, recomenda-se autenticação por usuário, MFA e perfis de autorização.
+- Auditoria formal LGPD/segurança e testes externos de invasão não foram executados.
+- Monitoramento, alertas e trilha de auditoria detalhada dependem de infraestrutura externa.

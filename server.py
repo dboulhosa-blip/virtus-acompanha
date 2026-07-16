@@ -27,11 +27,33 @@ SESSION_SECRET = os.environ.get("SESSION_SECRET") or (
 )
 SESSION_MAX_AGE = 60 * 60 * 12
 MAX_BODY_BYTES = 64 * 1024
+MAX_PATIENTS = 5000
 LOGIN_WINDOW_SECONDS = 15 * 60
 LOGIN_LOCK_SECONDS = 15 * 60
 MAX_LOGIN_ATTEMPTS = 5
 LOGIN_ATTEMPTS = {}
 PATIENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
+DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+STATIC_PATHS = {"/", "/index.html", "/styles.css", "/app.js"}
+ALLOWED_ORIGINS = {
+    origin.strip().rstrip("/")
+    for origin in os.environ.get("ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+}
+SENSITIVE_KEYS = {"password", "token", "formToken", "virtus_session", "session"}
+ALLOWED_DECISIONS = {
+    "Manter retorno",
+    "Postergar retorno",
+    "Solicitar contato",
+    "Antecipar consulta",
+}
+FOLLOWUP_OPTIONS = {
+    "improvement": {"Muito pior", "Pior", "Sem mudanças", "Melhor", "Muito melhor"},
+    "adherence": {"Sim", "Parcialmente", "Não"},
+    "sideEffects": {"Sim", "Não"},
+    "sleep": {"Muito ruim", "Ruim", "Regular", "Bom", "Muito bom"},
+    "symptoms": {"Muito piores", "Piores", "Sem mudanças", "Melhores", "Muito melhores"},
+}
 
 
 class VirtusHandler(SimpleHTTPRequestHandler):
@@ -50,6 +72,9 @@ class VirtusHandler(SimpleHTTPRequestHandler):
 
         if path.startswith("/api/patients/"):
             patient_id = path.removeprefix("/api/patients/")
+            if not PATIENT_ID_PATTERN.match(patient_id):
+                self.send_error_json(404, "Paciente não encontrado")
+                return
             patient = find_patient(patient_id)
             if not patient:
                 self.send_error_json(404, "Paciente não encontrado")
@@ -60,12 +85,18 @@ class VirtusHandler(SimpleHTTPRequestHandler):
             self.send_json(public_patient(patient))
             return
 
-        super().do_GET()
+        if path in STATIC_PATHS:
+            super().do_GET()
+            return
+
+        self.send_error(404, "Arquivo não encontrado")
 
     def do_POST(self):
         path = urlparse(self.path).path
 
         if path == "/api/login":
+            if not self.require_same_origin():
+                return
             payload = self.read_json_body()
             if payload is None:
                 return
@@ -74,7 +105,8 @@ class VirtusHandler(SimpleHTTPRequestHandler):
                 self.send_error_json(429, "Muitas tentativas. Aguarde alguns minutos.")
                 return
 
-            if not login_required() or payload.get("password") == ADMIN_PASSWORD:
+            supplied_password = str(payload.get("password", ""))
+            if not login_required() or hmac.compare_digest(supplied_password, ADMIN_PASSWORD):
                 clear_login_attempts(self.client_ip())
                 self.send_login_success()
                 return
@@ -84,6 +116,8 @@ class VirtusHandler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/logout":
+            if not self.require_same_origin():
+                return
             self.send_response(204)
             self.send_header("Set-Cookie", expired_session_cookie())
             self.end_headers()
@@ -101,15 +135,27 @@ class VirtusHandler(SimpleHTTPRequestHandler):
                 self.send_error_json(400, "Paciente inválido")
                 return
 
-            patient = prepare_registered_patient(patient)
+            try:
+                patient = prepare_registered_patient(patient)
+            except ValueError as error:
+                self.send_error_json(400, str(error))
+                return
             patients = read_patients()
+            if len(patients) >= MAX_PATIENTS:
+                self.send_error_json(400, "Limite de pacientes atingido")
+                return
             patients.insert(0, patient)
             write_patients(patients)
             self.send_json(patient)
             return
 
         if path.startswith("/api/patients/") and path.endswith("/response"):
+            if not self.require_same_origin():
+                return
             patient_id = path.removeprefix("/api/patients/").removesuffix("/response")
+            if not PATIENT_ID_PATTERN.match(patient_id):
+                self.send_error_json(404, "Paciente não encontrado")
+                return
             payload = self.read_json_body()
             if payload is None:
                 return
@@ -126,7 +172,11 @@ class VirtusHandler(SimpleHTTPRequestHandler):
                 self.send_json(public_patient(patient))
                 return
 
-            updated_patient = apply_response(patient, payload)
+            try:
+                updated_patient = apply_response(patient, payload)
+            except ValueError as error:
+                self.send_error_json(400, str(error))
+                return
             write_patients([
                 updated_patient if item.get("id") == patient_id else item for item in patients
             ])
@@ -145,13 +195,16 @@ class VirtusHandler(SimpleHTTPRequestHandler):
                 return
 
             patient_id = path.removeprefix("/api/patients/").removesuffix("/decision")
+            if not PATIENT_ID_PATTERN.match(patient_id):
+                self.send_error_json(404, "Paciente não encontrado")
+                return
             payload = self.read_json_body()
             if payload is None:
                 return
 
             decision = str(payload.get("decision", "")).strip()
-            if not decision:
-                self.send_error_json(400, "Decisão obrigatória")
+            if decision not in ALLOWED_DECISIONS:
+                self.send_error_json(400, "Decisão inválida")
                 return
 
             patients = read_patients()
@@ -184,6 +237,9 @@ class VirtusHandler(SimpleHTTPRequestHandler):
                 return
 
             patient_id = path.removeprefix("/api/patients/").removesuffix("/sent")
+            if not PATIENT_ID_PATTERN.match(patient_id):
+                self.send_error_json(404, "Paciente não encontrado")
+                return
             patients = read_patients()
             updated_patient = None
             next_patients = []
@@ -226,11 +282,30 @@ class VirtusHandler(SimpleHTTPRequestHandler):
             self.send_error_json(400, "A lista de pacientes é obrigatória")
             return
 
-        write_patients(patients)
+        if len(patients) > MAX_PATIENTS:
+            self.send_error_json(400, "Lista de pacientes muito grande")
+            return
+
+        try:
+            write_patients([normalize_patient_record(patient) for patient in patients])
+        except ValueError as error:
+            self.send_error_json(400, str(error))
+            return
         self.send_json({"ok": True})
 
     def read_json_body(self):
-        length = int(self.headers.get("Content-Length", "0"))
+        if self.command in {"POST", "PUT", "PATCH"}:
+            content_type = self.headers.get("Content-Type", "")
+            if "application/json" not in content_type:
+                self.send_error_json(415, "Content-Type deve ser application/json")
+                return None
+
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self.send_error_json(400, "Tamanho da requisição inválido")
+            return None
+
         if length > MAX_BODY_BYTES:
             self.send_error_json(413, "Requisição muito grande")
             return None
@@ -253,11 +328,16 @@ class VirtusHandler(SimpleHTTPRequestHandler):
     def require_same_origin(self):
         origin = self.headers.get("Origin") or self.headers.get("Referer")
         if not origin:
+            if IS_PRODUCTION:
+                self.send_error_json(403, "Origem obrigatória")
+                return False
             return True
 
         request_host = self.headers.get("Host", "")
-        origin_host = urlparse(origin).netloc
-        if origin_host == request_host:
+        parsed_origin = urlparse(origin)
+        origin_host = parsed_origin.netloc
+        origin_base = f"{parsed_origin.scheme}://{parsed_origin.netloc}"
+        if origin_host == request_host or origin_base in ALLOWED_ORIGINS:
             return True
 
         self.send_error_json(403, "Origem não autorizada")
@@ -280,7 +360,9 @@ class VirtusHandler(SimpleHTTPRequestHandler):
         expected_token = patient.get("formToken")
         request_token = self.query_params().get("token", "")
         if not expected_token:
-            return True
+            return not IS_PRODUCTION and self.is_authenticated()
+        if not request_token:
+            return False
         return hmac.compare_digest(str(expected_token), str(request_token))
 
     def query_params(self):
@@ -322,14 +404,23 @@ class VirtusHandler(SimpleHTTPRequestHandler):
     def send_security_headers(self):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
-        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-        self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        if IS_PRODUCTION:
+            self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         self.send_header(
             "Content-Security-Policy",
             "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
             "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
         )
+
+    def list_directory(self, path):
+        self.send_error(404, "Arquivo não encontrado")
+        return None
+
+    def log_message(self, format, *args):
+        sanitized_args = tuple(redact_log_value(arg) if isinstance(arg, str) else arg for arg in args)
+        print("%s - - [%s] %s" % (self.client_ip(), self.log_date_time_string(), format % sanitized_args))
 
 
 def login_required():
@@ -345,6 +436,8 @@ def validate_security_configuration():
         errors.append("SESSION_SECRET deve ter pelo menos 32 caracteres em produção")
     if IS_PRODUCTION and not DATABASE_URL:
         errors.append("DATABASE_URL é obrigatório em produção")
+    if IS_PRODUCTION and PATIENTS_FILE.exists():
+        errors.append("data/patients.json não deve existir em produção; use DATABASE_URL")
 
     if errors:
         for error in errors:
@@ -385,7 +478,8 @@ def clear_login_attempts(client_ip):
 
 def create_session_token():
     expires = str(int(time.time()) + SESSION_MAX_AGE)
-    payload = f"admin:{expires}"
+    nonce = secrets.token_urlsafe(18)
+    payload = f"admin:{expires}:{nonce}"
     signature = sign(payload)
     return base64.urlsafe_b64encode(f"{payload}:{signature}".encode("utf-8")).decode("utf-8")
 
@@ -393,12 +487,12 @@ def create_session_token():
 def verify_session_token(token):
     try:
         decoded = base64.urlsafe_b64decode(token.encode("utf-8")).decode("utf-8")
-        user, expires, signature = decoded.split(":", 2)
+        user, expires, nonce, signature = decoded.split(":", 3)
         is_active = int(expires) > int(time.time())
     except (ValueError, TypeError):
         return False
 
-    payload = f"{user}:{expires}"
+    payload = f"{user}:{expires}:{nonce}"
     if not hmac.compare_digest(signature, sign(payload)):
         return False
 
@@ -410,39 +504,119 @@ def sign(payload):
 
 
 def session_cookie(token):
-    return f"virtus_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_MAX_AGE}; Secure"
+    secure = "; Secure" if IS_PRODUCTION else ""
+    return f"virtus_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_MAX_AGE}{secure}"
 
 
 def expired_session_cookie():
-    return "virtus_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0; Secure"
+    secure = "; Secure" if IS_PRODUCTION else ""
+    return f"virtus_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0{secure}"
 
 
 def clean_text(value, max_length):
     return str(value or "").strip()[:max_length]
 
 
-def prepare_registered_patient(patient):
-    patient_id = clean_text(patient.get("id"), 80)
-    if not PATIENT_ID_PATTERN.match(patient_id):
-        patient_id = f"patient-{secrets.token_urlsafe(12)}"
+def clean_enum(value, allowed_values, field_name):
+    normalized = clean_text(value, 80)
+    if normalized not in allowed_values:
+        raise ValueError(f"{field_name} inválido")
+    return normalized
 
-    return {
-        **patient,
+
+def clean_date(value, field_name, required=False):
+    date_value = clean_text(value, 10)
+    if not date_value and not required:
+        return ""
+    if not DATE_PATTERN.match(date_value):
+        raise ValueError(f"{field_name} inválida")
+    return date_value
+
+
+def clean_phone(value):
+    return re.sub(r"\D", "", str(value or ""))[:16]
+
+
+def clean_patient_id(value):
+    patient_id = clean_text(value, 80)
+    if not PATIENT_ID_PATTERN.match(patient_id):
+        return f"patient-{secrets.token_urlsafe(12)}"
+    return patient_id
+
+
+def redact_log_value(value):
+    parsed = urlparse(value)
+    if parsed.query:
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        safe_query = []
+        for key, values in query.items():
+            replacement = "REDACTED" if key in SENSITIVE_KEYS else values[0]
+            safe_query.append(f"{key}={replacement}")
+        path = parsed.path or value.split("?", 1)[0]
+        return f"{path}?{'&'.join(safe_query)}"
+
+    redacted = value
+    for key in SENSITIVE_KEYS:
+        redacted = re.sub(
+            rf"({re.escape(key)}=)[^&\s]+",
+            rf"\1REDACTED",
+            redacted,
+            flags=re.IGNORECASE,
+        )
+    return redacted
+
+
+def normalize_patient_record(patient):
+    if not isinstance(patient, dict):
+        raise ValueError("Paciente inválido")
+
+    patient_id = clean_patient_id(patient.get("id"))
+    normalized = {
         "id": patient_id,
         "name": clean_text(patient.get("name"), 120),
-        "phone": re.sub(r"\D", "", str(patient.get("phone", "")))[:16],
-        "birthdate": clean_text(patient.get("birthdate"), 10),
+        "phone": clean_phone(patient.get("phone")),
+        "birthdate": clean_date(patient.get("birthdate"), "Data de nascimento"),
         "doctor": clean_text(patient.get("doctor"), 120),
-        "lastVisit": clean_text(patient.get("lastVisit"), 10),
-        "returnDate": clean_text(patient.get("returnDate"), 10),
+        "lastVisit": clean_date(patient.get("lastVisit"), "Última consulta"),
+        "returnDate": clean_date(patient.get("returnDate"), "Retorno previsto"),
+        "status": clean_text(patient.get("status"), 80),
+        "classification": clean_text(patient.get("classification"), 20),
+        "action": clean_text(patient.get("action"), 180),
+        "summary": clean_text(patient.get("summary"), 600),
+        "notes": clean_text(patient.get("notes"), 600),
+        "decision": clean_text(patient.get("decision"), 80),
+        "formToken": clean_text(patient.get("formToken"), 160) or secrets.token_urlsafe(32),
+    }
+
+    if not normalized["name"]:
+        raise ValueError("Nome do paciente é obrigatório")
+    return normalized
+
+
+def prepare_registered_patient(patient):
+    normalized = {
+        "id": clean_patient_id(patient.get("id")),
+        "name": clean_text(patient.get("name"), 120),
+        "phone": clean_phone(patient.get("phone")),
+        "birthdate": clean_date(patient.get("birthdate"), "Data de nascimento", required=True),
+        "doctor": clean_text(patient.get("doctor"), 120),
+        "lastVisit": clean_date(patient.get("lastVisit"), "Última consulta", required=True),
+        "returnDate": clean_date(patient.get("returnDate"), "Retorno previsto", required=True),
         "status": "WhatsApp pendente",
         "classification": "Pendente",
         "action": "Enviar formulário de acompanhamento pelo WhatsApp",
         "summary": "Paciente cadastrado e aguardando resposta do formulário de acompanhamento.",
         "notes": "",
         "decision": "",
-        "formToken": patient.get("formToken") or secrets.token_urlsafe(24),
+        "formToken": secrets.token_urlsafe(32),
     }
+    if not normalized["name"]:
+        raise ValueError("Nome do paciente é obrigatório")
+    if not normalized["phone"]:
+        raise ValueError("WhatsApp é obrigatório")
+    if not normalized["doctor"]:
+        raise ValueError("Médico é obrigatório")
+    return normalized
 
 
 def public_patient(patient):
@@ -497,31 +671,34 @@ def action_for_classification(classification):
 
 def build_summary(data):
     side_effect_text = (
-        f"efeito colateral informado: {data.get('sideEffectDetail') or 'sem detalhe'}"
+        f"efeito colateral informado: {clean_text(data.get('sideEffectDetail'), 300) or 'sem detalhe'}"
         if data.get("sideEffects") == "Sim"
         else "sem efeitos colaterais importantes"
     )
-    notes = str(data.get("notes", "")).strip()
+    notes = clean_text(data.get("notes"), 600)
     notes_text = f" Informação adicional: {notes}." if notes else ""
 
     return (
-        f'Paciente relata evolução "{data.get("improvement")}", '
-        f'adesão "{data.get("adherence")}", sono "{data.get("sleep")}", '
-        f'sintomas "{data.get("symptoms")}" e {side_effect_text}.{notes_text}'
+        f'Paciente relata evolução "{clean_text(data.get("improvement"), 40)}", '
+        f'adesão "{clean_text(data.get("adherence"), 40)}", sono "{clean_text(data.get("sleep"), 40)}", '
+        f'sintomas "{clean_text(data.get("symptoms"), 40)}" e {side_effect_text}.{notes_text}'
     )
 
 
 def apply_response(patient, data):
+    for field_name, allowed_values in FOLLOWUP_OPTIONS.items():
+        clean_enum(data.get(field_name), allowed_values, field_name)
+
     classification = classify_response(data)
     return {
         **patient,
-        "name": str(data.get("name", patient.get("name", ""))).strip(),
-        "birthdate": data.get("birthdate", patient.get("birthdate", "")),
+        "name": clean_text(data.get("name", patient.get("name", "")), 120),
+        "birthdate": clean_date(data.get("birthdate", patient.get("birthdate", "")), "Data de nascimento"),
         "status": "Formulário respondido",
         "classification": classification,
         "action": action_for_classification(classification),
         "summary": build_summary(data),
-        "notes": str(data.get("notes", "")).strip(),
+        "notes": clean_text(data.get("notes"), 600),
         "decision": "",
     }
 
