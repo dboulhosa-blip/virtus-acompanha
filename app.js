@@ -14,6 +14,7 @@ const state = {
 };
 
 const tableBody = document.querySelector("#patient-table");
+const auditList = document.querySelector("#audit-list");
 const loginScreen = document.querySelector("#login-screen");
 const loginForm = document.querySelector("#login-form");
 const loginOutput = document.querySelector("#login-output");
@@ -37,6 +38,7 @@ const logoutButton = document.querySelector("#logout-button");
 const focusFormButton = document.querySelector("[data-focus-form]");
 
 let patients = [];
+let auditEvents = [];
 let isApiStorageAvailable = false;
 let isAuthenticated = false;
 
@@ -87,6 +89,16 @@ async function loadPatients() {
       return [];
     }
     showOperationalError("Não foi possível carregar os dados do servidor.");
+    return [];
+  }
+}
+
+async function loadAuditEvents() {
+  if (window.location.protocol === "file:" || !isAuthenticated) return [];
+
+  try {
+    return await apiRequest("/api/audit");
+  } catch {
     return [];
   }
 }
@@ -353,6 +365,50 @@ function renderMetrics() {
   ).length;
 }
 
+function formatDateTime(timestamp) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
+}
+
+function auditEventLabel(event) {
+  const labels = {
+    patient_registered: "Paciente cadastrado",
+    whatsapp_sent: "WhatsApp marcado como enviado",
+    patient_response: "Formulário respondido",
+    medical_decision: "Decisão médica registrada",
+  };
+
+  return labels[event.type] || "Atividade registrada";
+}
+
+function renderAuditEvents() {
+  auditList.replaceChildren();
+
+  if (!auditEvents.length) {
+    auditList.append(createElement("p", {
+      className: "empty-state",
+      text: "Nenhuma atividade registrada ainda.",
+    }));
+    return;
+  }
+
+  auditEvents.slice(0, 8).forEach((event) => {
+    const item = createElement("article", { className: "activity-item" });
+    const label = createElement("strong", { text: auditEventLabel(event) });
+    const meta = createElement("span", {
+      text: `${formatDateTime(event.createdAt)}${event.patientId ? ` - ${event.patientId}` : ""}`,
+    });
+
+    item.append(label, meta);
+    auditList.append(item);
+  });
+}
+
 function renderDoctorOptions() {
   const selectedDoctor = doctorFilter.value || "Todos";
   const doctors = [...new Set(patients.map((patient) => patient.doctor))].sort();
@@ -508,6 +564,7 @@ function render() {
   renderDoctorOptions();
   renderTable();
   renderDoctorCards();
+  renderAuditEvents();
 }
 
 function setView(view) {
@@ -826,6 +883,7 @@ loginForm.addEventListener("submit", async (event) => {
     loginScreen.classList.add("is-hidden");
     isAuthenticated = true;
     patients = await loadPatients();
+    auditEvents = await loadAuditEvents();
     render();
   } catch {
     loginOutput.textContent = "Senha inválida. Tente novamente.";
@@ -841,6 +899,7 @@ logoutButton.addEventListener("click", async () => {
 
   isAuthenticated = false;
   patients = [];
+  auditEvents = [];
   loginForm.reset();
   loginOutput.textContent = "";
   document.body.classList.add("login-required");
@@ -902,6 +961,7 @@ focusFormButton.addEventListener("click", () => {
 refreshButton.addEventListener("click", async () => {
   try {
     patients = await loadPatients();
+    auditEvents = await loadAuditEvents();
     classificationOutput.textContent = isApiStorageAvailable || isLocalFallbackAllowed()
       ? "Dados atualizados."
       : "Não foi possível atualizar os dados do servidor.";
@@ -972,6 +1032,7 @@ async function initializeApp() {
   if (!canLoadPatients) return;
 
   patients = await loadPatients();
+  auditEvents = await loadAuditEvents();
   render();
   openViewFromHash();
 }

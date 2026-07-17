@@ -1,5 +1,7 @@
 __pycache__/
 *.pyc
+*.zip
 .DS_Store
 data/patients.json
+data/audit.json
 outputs/

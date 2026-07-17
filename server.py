@@ -15,6 +15,7 @@ import time
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
 PATIENTS_FILE = DATA_DIR / "patients.json"
+AUDIT_FILE = DATA_DIR / "audit.json"
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 IS_PRODUCTION = bool(
@@ -28,6 +29,7 @@ SESSION_SECRET = os.environ.get("SESSION_SECRET") or (
 SESSION_MAX_AGE = 60 * 60 * 12
 MAX_BODY_BYTES = 64 * 1024
 MAX_PATIENTS = 5000
+MAX_AUDIT_EVENTS = 200
 LOGIN_WINDOW_SECONDS = 15 * 60
 LOGIN_LOCK_SECONDS = 15 * 60
 MAX_LOGIN_ATTEMPTS = 5
@@ -68,6 +70,12 @@ class VirtusHandler(SimpleHTTPRequestHandler):
             if not self.require_auth():
                 return
             self.send_json(read_patients())
+            return
+
+        if path == "/api/audit":
+            if not self.require_auth():
+                return
+            self.send_json(read_audit_events())
             return
 
         if path.startswith("/api/patients/"):
@@ -146,6 +154,7 @@ class VirtusHandler(SimpleHTTPRequestHandler):
                 return
             patients.insert(0, patient)
             write_patients(patients)
+            record_audit_event("patient_registered", patient.get("id"), "admin")
             self.send_json(patient)
             return
 
@@ -180,6 +189,7 @@ class VirtusHandler(SimpleHTTPRequestHandler):
             write_patients([
                 updated_patient if item.get("id") == patient_id else item for item in patients
             ])
+            record_audit_event("patient_response", patient_id, "patient")
             self.send_json(public_patient(updated_patient))
             return
 
@@ -227,6 +237,7 @@ class VirtusHandler(SimpleHTTPRequestHandler):
                 return
 
             write_patients(next_patients)
+            record_audit_event("medical_decision", patient_id, "admin")
             self.send_json(updated_patient)
             return
 
@@ -259,6 +270,7 @@ class VirtusHandler(SimpleHTTPRequestHandler):
                 return
 
             write_patients(next_patients)
+            record_audit_event("whatsapp_sent", patient_id, "admin")
             self.send_json(updated_patient)
             return
 
@@ -724,6 +736,42 @@ def write_patients(patients):
         json.dump(patients, file, ensure_ascii=False, indent=2)
 
 
+def read_audit_events():
+    if DATABASE_URL:
+        return read_state_from_database("audit_events")
+
+    if not AUDIT_FILE.exists():
+        return []
+
+    with AUDIT_FILE.open("r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+def write_audit_events(events):
+    events = events[:MAX_AUDIT_EVENTS]
+    if DATABASE_URL:
+        write_state_to_database("audit_events", events)
+        return
+
+    DATA_DIR.mkdir(exist_ok=True)
+    with AUDIT_FILE.open("w", encoding="utf-8") as file:
+        json.dump(events, file, ensure_ascii=False, indent=2)
+
+
+def record_audit_event(event_type, patient_id="", actor="system"):
+    try:
+        event = {
+            "id": secrets.token_urlsafe(12),
+            "type": clean_text(event_type, 80),
+            "patientId": clean_text(patient_id, 80),
+            "actor": clean_text(actor, 40),
+            "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        write_audit_events([event, *read_audit_events()])
+    except Exception as error:
+        print(f"Falha ao registrar auditoria: {type(error).__name__}")
+
+
 def find_patient(patient_id):
     return next((patient for patient in read_patients() if patient.get("id") == patient_id), None)
 
@@ -751,10 +799,18 @@ def ensure_database():
 
 
 def read_patients_from_database():
+    return read_state_from_database("patients")
+
+
+def write_patients_to_database(patients):
+    write_state_to_database("patients", patients)
+
+
+def read_state_from_database(state_id):
     ensure_database()
     with db_connect() as connection:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT payload FROM virtus_state WHERE id = 'patients'")
+            cursor.execute("SELECT payload FROM virtus_state WHERE id = %s", (state_id,))
             row = cursor.fetchone()
             if not row:
                 return []
@@ -764,18 +820,18 @@ def read_patients_from_database():
             return payload
 
 
-def write_patients_to_database(patients):
+def write_state_to_database(state_id, payload):
     ensure_database()
     with db_connect() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
                 INSERT INTO virtus_state (id, payload)
-                VALUES ('patients', %s::jsonb)
+                VALUES (%s, %s::jsonb)
                 ON CONFLICT (id)
                 DO UPDATE SET payload = EXCLUDED.payload
                 """,
-                (json.dumps(patients, ensure_ascii=False),),
+                (state_id, json.dumps(payload, ensure_ascii=False)),
             )
 
 

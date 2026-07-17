@@ -645,6 +645,41 @@ tbody tr:last-child td {
   white-space: nowrap;
 }
 
+.activity-panel {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  padding: 18px;
+}
+
+.activity-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.activity-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.activity-item strong {
+  font-size: 0.94rem;
+}
+
+.activity-item span {
+  color: var(--muted);
+  font-size: 0.86rem;
+  white-space: nowrap;
+}
+
 .form-layout {
   display: grid;
   grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
