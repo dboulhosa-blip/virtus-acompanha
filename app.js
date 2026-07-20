@@ -34,6 +34,7 @@ const registrationOutput = document.querySelector("#registration-output");
 const registrationMessage = document.querySelector("#registration-message");
 const registrationWhatsapp = document.querySelector("#registration-whatsapp");
 const refreshButton = document.querySelector("#refresh-data");
+const exportButton = document.querySelector("#export-data");
 const logoutButton = document.querySelector("#logout-button");
 const focusFormButton = document.querySelector("[data-focus-form]");
 
@@ -377,6 +378,7 @@ function formatDateTime(timestamp) {
 
 function auditEventLabel(event) {
   const labels = {
+    data_exported: "Exportação operacional realizada",
     patient_registered: "Paciente cadastrado",
     whatsapp_sent: "WhatsApp marcado como enviado",
     patient_response: "Formulário respondido",
@@ -856,6 +858,82 @@ function createFormToken() {
   throw new Error("Gerador seguro indisponível");
 }
 
+function csvEscape(value) {
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
+
+function buildOperationalExportRows() {
+  return getFilteredPatients().map((patient) => {
+    const schedule = getSendSchedule(patient);
+
+    return [
+      patient.name,
+      patient.doctor,
+      patient.phone,
+      patient.lastVisit ? formatDate(patient.lastVisit) : "",
+      schedule.dateText,
+      patient.returnDate ? formatDate(patient.returnDate) : "",
+      patient.classification,
+      patient.decision || patient.status,
+      patient.action,
+      patient.decision,
+    ];
+  });
+}
+
+async function recordExportAudit(count) {
+  if (!isApiStorageAvailable || window.location.protocol === "file:") return;
+
+  try {
+    await apiRequest("/api/audit/export", {
+      body: JSON.stringify({ count }),
+      method: "POST",
+    });
+    auditEvents = await loadAuditEvents();
+    renderAuditEvents();
+  } catch {
+    // Export should still work if the audit service is temporarily unavailable.
+  }
+}
+
+async function exportOperationalCsv() {
+  const rows = buildOperationalExportRows();
+
+  if (!rows.length) {
+    classificationOutput.textContent = "Nenhum paciente encontrado para exportar.";
+    return;
+  }
+
+  const headers = [
+    "Paciente",
+    "Médico",
+    "WhatsApp",
+    "Consulta",
+    "Enviar em",
+    "Retorno",
+    "Classificação",
+    "Status",
+    "Ação sugerida",
+    "Decisão médica",
+  ];
+  const csv = [headers, ...rows]
+    .map((row) => row.map(csvEscape).join(";"))
+    .join("\n");
+  const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = `virtus-acompanha-${toDateInputValue(new Date())}.csv`;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+
+  classificationOutput.textContent = `${rows.length} registro(s) exportado(s) sem token do formulário ou respostas clínicas livres.`;
+  await recordExportAudit(rows.length);
+}
+
 function updateRegistrationPreview(patient) {
   registrationMessage.textContent = buildWhatsAppMessage(patient);
   registrationWhatsapp.href = getWhatsAppUrl(patient);
@@ -970,6 +1048,8 @@ refreshButton.addEventListener("click", async () => {
     classificationOutput.textContent = "Não foi possível atualizar os dados.";
   }
 });
+
+exportButton.addEventListener("click", exportOperationalCsv);
 
 registrationForm.addEventListener("submit", async (event) => {
   event.preventDefault();

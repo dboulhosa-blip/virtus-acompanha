@@ -131,6 +131,19 @@ class VirtusHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             return
 
+        if path == "/api/audit/export":
+            if not self.require_auth():
+                return
+            if not self.require_same_origin():
+                return
+            payload = self.read_json_body()
+            if payload is None:
+                return
+
+            record_audit_event("data_exported", "", "admin")
+            self.send_json({"ok": True})
+            return
+
         if path == "/api/patients":
             if not self.require_auth():
                 return
