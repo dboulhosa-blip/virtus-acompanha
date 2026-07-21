@@ -37,6 +37,11 @@ const refreshButton = document.querySelector("#refresh-data");
 const exportButton = document.querySelector("#export-data");
 const logoutButton = document.querySelector("#logout-button");
 const focusFormButton = document.querySelector("[data-focus-form]");
+const historyModal = document.querySelector("#history-modal");
+const historyTitle = document.querySelector("#history-title");
+const historySubtitle = document.querySelector("#history-subtitle");
+const historyList = document.querySelector("#history-list");
+const closeHistoryButton = document.querySelector("#close-history");
 
 let patients = [];
 let auditEvents = [];
@@ -378,6 +383,7 @@ function formatDateTime(timestamp) {
 
 function auditEventLabel(event) {
   const labels = {
+    current_status: "Status atual",
     data_exported: "Exportação operacional realizada",
     patient_registered: "Paciente cadastrado",
     whatsapp_sent: "WhatsApp marcado como enviado",
@@ -432,7 +438,7 @@ function renderTable() {
   if (!rows.length) {
     const row = createElement("tr");
     const cell = createElement("td", {
-      colSpan: 8,
+      colSpan: 9,
       text: "Nenhum paciente encontrado para os filtros selecionados.",
     });
     row.append(cell);
@@ -481,10 +487,12 @@ function renderTable() {
       createElement("td"),
       createElement("td", { text: patient.action }),
       createElement("td"),
+      createElement("td"),
     );
     row.children[4].append(badge);
     row.children[5].append(status);
     row.children[7].append(createWhatsAppAction(patient));
+    row.children[8].append(createHistoryAction(patient));
     tableBody.append(row);
   });
 }
@@ -504,6 +512,17 @@ function createWhatsAppAction(patient) {
 
   action.addEventListener("click", () => markWhatsAppSent(patient.id));
   return action;
+}
+
+function createHistoryAction(patient) {
+  const button = createElement("button", {
+    className: "secondary-action",
+    type: "button",
+    text: "Histórico",
+  });
+
+  button.addEventListener("click", () => openPatientHistory(patient.id));
+  return button;
 }
 
 function renderDoctorCards() {
@@ -934,6 +953,67 @@ async function exportOperationalCsv() {
   await recordExportAudit(rows.length);
 }
 
+function patientHistoryEvents(patient) {
+  const events = auditEvents.filter((event) => event.patientId === patient.id);
+
+  if (events.length) return events;
+
+  return [
+    {
+      id: `current-${patient.id}`,
+      type: "current_status",
+      patientId: patient.id,
+      actor: "system",
+      createdAt: new Date().toISOString(),
+    },
+  ];
+}
+
+function historyEventDetail(event, patient) {
+  const details = {
+    current_status: patient.decision || patient.status,
+    patient_registered: "Cadastro criado no acompanhamento.",
+    whatsapp_sent: "Envio do formulário marcado no painel.",
+    patient_response: "Resposta recebida e classificação atualizada.",
+    medical_decision: patient.decision || "Decisão médica registrada.",
+  };
+
+  return details[event.type] || "Atividade operacional registrada.";
+}
+
+function openPatientHistory(patientId) {
+  const patient = patients.find((item) => item.id === patientId);
+  if (!patient) return;
+
+  const schedule = getSendSchedule(patient);
+  const events = patientHistoryEvents(patient);
+
+  historyTitle.textContent = patient.name;
+  historySubtitle.textContent = `${patient.doctor} - envio ${schedule.dateText} - retorno ${formatDate(patient.returnDate)}`;
+  historyList.replaceChildren();
+
+  events.forEach((event) => {
+    const item = createElement("article", { className: "timeline-item" });
+    const marker = createElement("span", { className: "timeline-marker" });
+    const content = createElement("div");
+    const label = createElement("strong", { text: auditEventLabel(event) });
+    const meta = createElement("span", {
+      text: `${formatDateTime(event.createdAt)} - ${historyEventDetail(event, patient)}`,
+    });
+
+    content.append(label, meta);
+    item.append(marker, content);
+    historyList.append(item);
+  });
+
+  historyModal.classList.remove("is-hidden");
+  closeHistoryButton.focus();
+}
+
+function closePatientHistory() {
+  historyModal.classList.add("is-hidden");
+}
+
 function updateRegistrationPreview(patient) {
   registrationMessage.textContent = buildWhatsAppMessage(patient);
   registrationWhatsapp.href = getWhatsAppUrl(patient);
@@ -1050,6 +1130,18 @@ refreshButton.addEventListener("click", async () => {
 });
 
 exportButton.addEventListener("click", exportOperationalCsv);
+
+closeHistoryButton.addEventListener("click", closePatientHistory);
+
+historyModal.addEventListener("click", (event) => {
+  if (event.target === historyModal) closePatientHistory();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !historyModal.classList.contains("is-hidden")) {
+    closePatientHistory();
+  }
+});
 
 registrationForm.addEventListener("submit", async (event) => {
   event.preventDefault();

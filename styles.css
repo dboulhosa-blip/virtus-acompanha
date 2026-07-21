@@ -404,7 +404,7 @@ textarea:focus {
 
 table {
   width: 100%;
-  min-width: 980px;
+  min-width: 1100px;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -645,6 +645,23 @@ tbody tr:last-child td {
   white-space: nowrap;
 }
 
+.secondary-action {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--blue-dark);
+  padding: 0 12px;
+  font-size: 0.84rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.secondary-action:hover {
+  border-color: #b9dce7;
+  background: #eaf4f8;
+}
+
 .activity-panel {
   margin-top: 18px;
   border: 1px solid var(--line);
@@ -678,6 +695,84 @@ tbody tr:last-child td {
   color: var(--muted);
   font-size: 0.86rem;
   white-space: nowrap;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(13, 27, 34, 0.42);
+}
+
+.modal-backdrop.is-hidden {
+  display: none;
+}
+
+.modal-panel {
+  width: min(640px, 100%);
+  max-height: min(720px, 90vh);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 24px 70px rgba(23, 33, 43, 0.22);
+  padding: 20px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 14px;
+}
+
+.modal-header p {
+  margin-bottom: 0;
+  color: var(--muted);
+}
+
+.timeline-list {
+  display: grid;
+  gap: 0;
+  margin-top: 16px;
+}
+
+.timeline-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 12px;
+  padding: 0 0 16px;
+}
+
+.timeline-item:not(:last-child) {
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 16px;
+}
+
+.timeline-marker {
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
+  border: 3px solid #b9dce7;
+  border-radius: 999px;
+  background: var(--blue-dark);
+}
+
+.timeline-item strong,
+.timeline-item span {
+  display: block;
+}
+
+.timeline-item span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 
 .form-layout {

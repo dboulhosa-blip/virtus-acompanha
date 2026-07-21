@@ -144,6 +144,7 @@
                   <th>Status</th>
                   <th>Ação sugerida</th>
                   <th>WhatsApp</th>
+                  <th>Histórico</th>
                 </tr>
               </thead>
               <tbody id="patient-table"></tbody>
@@ -351,6 +352,19 @@
           </div>
         </section>
       </main>
+    </div>
+
+    <div class="modal-backdrop is-hidden" id="history-modal" role="dialog" aria-modal="true" aria-labelledby="history-title">
+      <section class="modal-panel">
+        <div class="modal-header">
+          <div>
+            <h2 id="history-title">Histórico do paciente</h2>
+            <p id="history-subtitle"></p>
+          </div>
+          <button class="icon-button" id="close-history" type="button" aria-label="Fechar histórico" title="Fechar histórico">X</button>
+        </div>
+        <div class="timeline-list" id="history-list"></div>
+      </section>
     </div>
 
     <script src="app.js"></script>
