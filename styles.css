@@ -260,6 +260,11 @@ h2 {
   background: var(--blue-dark);
 }
 
+.primary-button:disabled {
+  cursor: progress;
+  opacity: 0.72;
+}
+
 .ghost-button,
 .icon-button {
   border-color: var(--line);
@@ -722,6 +727,10 @@ tbody tr:last-child td {
   padding: 20px;
 }
 
+.modal-panel-compact {
+  width: min(520px, 100%);
+}
+
 .modal-header {
   display: flex;
   align-items: flex-start;
@@ -734,6 +743,35 @@ tbody tr:last-child td {
 .modal-header p {
   margin-bottom: 0;
   color: var(--muted);
+}
+
+.decision-confirmation {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  border: 1px solid #b9dce7;
+  border-radius: 8px;
+  background: #eaf4f8;
+  padding: 14px;
+}
+
+.decision-confirmation span {
+  color: var(--blue-dark);
+  font-size: 1.05rem;
+  font-weight: 850;
+}
+
+.decision-confirmation p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
 }
 
 .timeline-list {

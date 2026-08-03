@@ -367,6 +367,26 @@
       </section>
     </div>
 
+    <div class="modal-backdrop is-hidden" id="decision-modal" role="dialog" aria-modal="true" aria-labelledby="decision-title">
+      <section class="modal-panel modal-panel-compact">
+        <div class="modal-header">
+          <div>
+            <h2 id="decision-title">Confirmar decisão médica</h2>
+            <p id="decision-subtitle"></p>
+          </div>
+          <button class="icon-button" id="close-decision" type="button" aria-label="Cancelar decisão" title="Cancelar decisão">X</button>
+        </div>
+        <div class="decision-confirmation">
+          <span id="decision-choice"></span>
+          <p>Essa ação altera o status do paciente e ficará registrada no histórico operacional.</p>
+        </div>
+        <div class="modal-actions">
+          <button class="ghost-button" id="cancel-decision" type="button">Cancelar</button>
+          <button class="primary-button" id="confirm-decision" type="button">Confirmar decisão</button>
+        </div>
+      </section>
+    </div>
+
     <script src="app.js"></script>
   </body>
 </html>

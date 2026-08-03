@@ -42,11 +42,18 @@ const historyTitle = document.querySelector("#history-title");
 const historySubtitle = document.querySelector("#history-subtitle");
 const historyList = document.querySelector("#history-list");
 const closeHistoryButton = document.querySelector("#close-history");
+const decisionModal = document.querySelector("#decision-modal");
+const decisionSubtitle = document.querySelector("#decision-subtitle");
+const decisionChoice = document.querySelector("#decision-choice");
+const closeDecisionButton = document.querySelector("#close-decision");
+const cancelDecisionButton = document.querySelector("#cancel-decision");
+const confirmDecisionButton = document.querySelector("#confirm-decision");
 
 let patients = [];
 let auditEvents = [];
 let isApiStorageAvailable = false;
 let isAuthenticated = false;
+let pendingDecision = null;
 
 function loadLocalPatients() {
   try {
@@ -568,7 +575,7 @@ function renderDoctorCards() {
       (decision) => {
         const button = createElement("button", { type: "button", text: decision });
         button.classList.toggle("is-selected", patient.decision === decision);
-        button.addEventListener("click", () => registerDecision(patient.id, decision));
+        button.addEventListener("click", () => openDecisionConfirmation(patient.id, decision));
         decisions.append(button);
       },
     );
@@ -1014,6 +1021,38 @@ function closePatientHistory() {
   historyModal.classList.add("is-hidden");
 }
 
+function openDecisionConfirmation(patientId, decision) {
+  const patient = patients.find((item) => item.id === patientId);
+  if (!patient) return;
+
+  pendingDecision = { patientId, decision };
+  decisionSubtitle.textContent = `${patient.name} - ${patient.classification}`;
+  decisionChoice.textContent = decision;
+  decisionModal.classList.remove("is-hidden");
+  confirmDecisionButton.focus();
+}
+
+function closeDecisionConfirmation() {
+  pendingDecision = null;
+  decisionModal.classList.add("is-hidden");
+}
+
+async function confirmPendingDecision() {
+  if (!pendingDecision) return;
+
+  const { patientId, decision } = pendingDecision;
+  confirmDecisionButton.disabled = true;
+  confirmDecisionButton.textContent = "Registrando...";
+
+  try {
+    await registerDecision(patientId, decision);
+    closeDecisionConfirmation();
+  } finally {
+    confirmDecisionButton.disabled = false;
+    confirmDecisionButton.textContent = "Confirmar decisão";
+  }
+}
+
 function updateRegistrationPreview(patient) {
   registrationMessage.textContent = buildWhatsAppMessage(patient);
   registrationWhatsapp.href = getWhatsAppUrl(patient);
@@ -1137,9 +1176,20 @@ historyModal.addEventListener("click", (event) => {
   if (event.target === historyModal) closePatientHistory();
 });
 
+closeDecisionButton.addEventListener("click", closeDecisionConfirmation);
+cancelDecisionButton.addEventListener("click", closeDecisionConfirmation);
+confirmDecisionButton.addEventListener("click", confirmPendingDecision);
+
+decisionModal.addEventListener("click", (event) => {
+  if (event.target === decisionModal) closeDecisionConfirmation();
+});
+
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !historyModal.classList.contains("is-hidden")) {
     closePatientHistory();
+  }
+  if (event.key === "Escape" && !decisionModal.classList.contains("is-hidden")) {
+    closeDecisionConfirmation();
   }
 });
 
