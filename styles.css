@@ -848,6 +848,27 @@ tbody tr:last-child td {
   line-height: 1.5;
 }
 
+.urgent-notice {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #f0c2c2;
+  border-left: 5px solid var(--red);
+  border-radius: 8px;
+  background: #fff5f5;
+  padding: 14px 16px;
+}
+
+.urgent-notice strong {
+  color: var(--red);
+  font-size: 0.95rem;
+}
+
+.urgent-notice p {
+  margin: 0;
+  color: #693232;
+  line-height: 1.48;
+}
+
 .whatsapp-button {
   display: inline-flex;
   align-items: center;
