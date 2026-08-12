@@ -1,0 +1,14 @@
+{
+  "name": "virtus-acompanha",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Virtus Acompanha MVP",
+  "scripts": {
+    "build": "mkdir -p dist && cp index.html styles.css app.js dist/",
+    "start": "python3 server.py"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {}
+}

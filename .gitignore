@@ -2,6 +2,9 @@ __pycache__/
 *.pyc
 *.zip
 .DS_Store
+.netlify/
+.codex_doc_review/
+dist/
 data/patients.json
 data/audit.json
 outputs/

@@ -20,11 +20,49 @@ http://127.0.0.1:4176/index.html
 - A aba Cadastro cria um paciente pendente e gera link de WhatsApp.
 - O link do WhatsApp leva para um formulário vinculado ao paciente.
 - Ao responder, o paciente sai de Pendente e recebe classificação Verde, Amarelo ou Vermelho.
-- Os dados ficam em `data/patients.json`.
+- Em desenvolvimento local, os dados podem ficar em `data/patients.json`.
+- Em hospedagem online, os dados ficam no PostgreSQL configurado em `DATABASE_URL`.
+
+## Publicação na Netlify
+
+O projeto também inclui `netlify.toml`, `package.json` e a função `netlify/functions/api.js`.
+
+### Opção recomendada sem Render pago
+
+1. Faça **Push origin** no GitHub Desktop.
+2. Crie uma conta em `https://www.netlify.com`.
+3. Na Netlify, escolha **Add new site** > **Import an existing project**.
+4. Conecte o GitHub e selecione o repositório `virtus-acompanha`.
+5. Confirme as configurações:
+
+```text
+Build command: npm run build
+Publish directory: dist
+Functions directory: netlify/functions
+```
+
+6. Configure as variáveis de ambiente na Netlify:
+
+```text
+ADMIN_PASSWORD=uma-senha-forte-para-a-equipe
+SESSION_SECRET=um-texto-longo-aleatorio-com-pelo-menos-32-caracteres
+DATABASE_URL=url-do-banco-postgresql-do-supabase
+ALLOWED_ORIGINS=https://seu-site.netlify.app
+```
+
+7. Faça o deploy.
+
+Os endpoints `/api/...` são redirecionados para a função Netlify automaticamente. A tela do app continua usando os mesmos caminhos de API.
+
+### Importante na Netlify
+
+- Mantenha `DATABASE_URL`, `ADMIN_PASSWORD` e `SESSION_SECRET` sempre configurados.
+- Use a URL do Supabase com pooler quando possível.
+- Depois que o site Netlify estiver ativo, teste login, cadastro, WhatsApp, formulário, histórico, auditoria e exportação CSV.
 
 ## Publicação no Render
 
-O projeto já inclui `render.yaml`, `Procfile` e `requirements.txt`.
+O projeto ainda mantém `render.yaml`, `Procfile` e `requirements.txt` para quem quiser continuar usando Render.
 
 ### Opção recomendada
 
