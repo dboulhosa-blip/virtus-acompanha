@@ -167,7 +167,16 @@ async function apiRequest(url, options = {}) {
     },
   });
 
-  if (!response.ok) throw new Error("Falha na comunicação com o servidor");
+  if (!response.ok) {
+    let message = "Falha na comunicação com o servidor";
+    try {
+      const payload = await response.json();
+      if (payload?.error) message = payload.error;
+    } catch {
+      // Keep the default message when the server returns a non-JSON response.
+    }
+    throw new Error(message);
+  }
   if (response.status === 204) return null;
   return response.json();
 }
@@ -1203,8 +1212,8 @@ registrationForm.addEventListener("submit", async (event) => {
     registrationOutput.textContent = "Paciente cadastrado. WhatsApp pronto para envio.";
     render();
     setView("dashboard");
-  } catch {
-    registrationOutput.textContent = "Não foi possível salvar. Verifique o servidor e tente novamente.";
+  } catch (error) {
+    registrationOutput.textContent = error.message || "Não foi possível salvar. Verifique o servidor e tente novamente.";
   }
 });
 

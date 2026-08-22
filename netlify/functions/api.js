@@ -592,10 +592,32 @@ exports.handler = async (event) => {
   } catch (error) {
     console.error(redactLogValue(error.message || "Erro interno"));
     return jsonResponse(error.statusCode || 500, {
-      error: error.statusCode ? error.message : "Erro interno do servidor",
+      error: error.statusCode ? error.message : publicErrorMessage(error),
     });
   }
 };
+
+function publicErrorMessage(error) {
+  const message = String(error?.message || "").toLowerCase();
+  const code = String(error?.code || "").toLowerCase();
+
+  if (message.includes("password authentication failed") || code === "28p01") {
+    return "O banco de dados recusou a senha. Confira a variável DATABASE_URL no Netlify.";
+  }
+
+  if (
+    message.includes("network is unreachable") ||
+    message.includes("connection refused") ||
+    message.includes("timeout") ||
+    code === "enotfound" ||
+    code === "econnrefused" ||
+    code === "etimedout"
+  ) {
+    return "Não foi possível conectar ao banco de dados. Confira se o DATABASE_URL usa o endereço pooler do Supabase.";
+  }
+
+  return "Erro interno do servidor. Verifique os logs das funções no Netlify.";
+}
 
 function redactLogValue(value) {
   let redacted = String(value || "");
