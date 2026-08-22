@@ -110,6 +110,10 @@ async function ensureDatabase() {
   databaseReady = true;
 }
 
+async function checkDatabase() {
+  await getPool().query("SELECT 1");
+}
+
 async function readState(stateId) {
   await ensureDatabase();
   const result = await getPool().query("SELECT payload FROM virtus_state WHERE id = $1", [stateId]);
@@ -428,6 +432,11 @@ async function route(event) {
 
   if (method === "GET" && path === "/api/session") {
     return jsonResponse(200, { authenticated: isAuthenticated(event), loginRequired: true });
+  }
+
+  if (method === "GET" && path === "/api/health") {
+    await checkDatabase();
+    return jsonResponse(200, { ok: true, database: "connected" });
   }
 
   if (method === "POST" && path === "/api/login") {
