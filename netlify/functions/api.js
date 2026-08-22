@@ -92,11 +92,24 @@ function validateConfiguration() {
 function getPool() {
   if (!pool) {
     pool = new Pool({
-      connectionString: DATABASE_URL,
+      connectionString: databaseConnectionString(),
       ssl: { rejectUnauthorized: false },
     });
   }
   return pool;
+}
+
+function databaseConnectionString() {
+  try {
+    const url = new URL(DATABASE_URL);
+    url.searchParams.delete("sslmode");
+    url.searchParams.delete("sslcert");
+    url.searchParams.delete("sslkey");
+    url.searchParams.delete("sslrootcert");
+    return url.toString();
+  } catch {
+    return DATABASE_URL;
+  }
 }
 
 async function ensureDatabase() {
@@ -623,6 +636,10 @@ function publicErrorMessage(error) {
 
   if (message.includes("password authentication failed") || code === "28p01") {
     return "O banco de dados recusou a senha. Confira a variável DATABASE_URL no Netlify.";
+  }
+
+  if (message.includes("self-signed certificate") || code === "self_signed_cert_in_chain") {
+    return "O certificado SSL do banco foi recusado. O app precisa ignorar a validação da cadeia do certificado do pooler.";
   }
 
   if (
