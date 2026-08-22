@@ -8,6 +8,7 @@ const initialPatients = [];
 const state = {
   activeView: "dashboard",
   classificationFilter: "Todos",
+  statusFilter: "Todos",
   doctorFilter: "Todos",
   dateFilter: "",
   search: "",
@@ -349,13 +350,11 @@ function getActionForClassification(classification) {
 
 function getFilteredPatients({ includeSearch = false } = {}) {
   return patients.filter((patient) => {
-    const schedule = getSendSchedule(patient);
     const matchesClassification =
       state.classificationFilter === "Todos" ||
-      (state.classificationFilter === "Pronto para envio" &&
-        schedule.state === "ready" &&
-        patient.status !== "WhatsApp enviado") ||
       patient.classification === state.classificationFilter;
+    const matchesStatus =
+      state.statusFilter === "Todos" || operationalStatusLabel(patient) === state.statusFilter;
     const matchesDoctor =
       state.doctorFilter === "Todos" || patient.doctor === state.doctorFilter;
     const matchesDate = !state.dateFilter || patient.returnDate === state.dateFilter;
@@ -363,7 +362,7 @@ function getFilteredPatients({ includeSearch = false } = {}) {
       !includeSearch ||
       patient.name.toLowerCase().includes(state.search.toLowerCase().trim());
 
-    return matchesClassification && matchesDoctor && matchesDate && matchesSearch;
+    return matchesClassification && matchesStatus && matchesDoctor && matchesDate && matchesSearch;
   });
 }
 
@@ -1128,10 +1127,21 @@ logoutButton.addEventListener("click", async () => {
 
 window.addEventListener("hashchange", openViewFromHash);
 
-document.querySelectorAll("[data-filter]").forEach((button) => {
+document.querySelectorAll("[data-classification-filter]").forEach((button) => {
   button.addEventListener("click", () => {
-    state.classificationFilter = button.dataset.filter;
-    document.querySelectorAll("[data-filter]").forEach((item) => {
+    state.classificationFilter = button.dataset.classificationFilter;
+    document.querySelectorAll("[data-classification-filter]").forEach((item) => {
+      item.classList.toggle("is-active", item === button);
+      item.setAttribute("aria-selected", item === button ? "true" : "false");
+    });
+    render();
+  });
+});
+
+document.querySelectorAll("[data-status-filter]").forEach((button) => {
+  button.addEventListener("click", () => {
+    state.statusFilter = button.dataset.statusFilter;
+    document.querySelectorAll("[data-status-filter]").forEach((item) => {
       item.classList.toggle("is-active", item === button);
       item.setAttribute("aria-selected", item === button ? "true" : "false");
     });
@@ -1158,12 +1168,18 @@ searchInput.addEventListener("input", (event) => {
 
 document.querySelector("#clear-filters").addEventListener("click", () => {
   state.classificationFilter = "Todos";
+  state.statusFilter = "Todos";
   state.doctorFilter = "Todos";
   state.dateFilter = "";
   doctorFilter.value = "Todos";
   dateFilter.value = "";
-  document.querySelectorAll("[data-filter]").forEach((item) => {
-    const isActive = item.dataset.filter === "Todos";
+  document.querySelectorAll("[data-classification-filter]").forEach((item) => {
+    const isActive = item.dataset.classificationFilter === "Todos";
+    item.classList.toggle("is-active", isActive);
+    item.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+  document.querySelectorAll("[data-status-filter]").forEach((item) => {
+    const isActive = item.dataset.statusFilter === "Todos";
     item.classList.toggle("is-active", isActive);
     item.setAttribute("aria-selected", isActive ? "true" : "false");
   });
@@ -1268,7 +1284,7 @@ form.addEventListener("submit", async (event) => {
   setView("dashboard");
 });
 
-document.querySelectorAll("[data-filter]").forEach((item) => {
+document.querySelectorAll("[data-classification-filter], [data-status-filter]").forEach((item) => {
   item.setAttribute("aria-selected", item.classList.contains("is-active") ? "true" : "false");
 });
 

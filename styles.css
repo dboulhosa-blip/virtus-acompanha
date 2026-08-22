@@ -366,6 +366,12 @@ h2 {
   box-shadow: 0 8px 18px rgba(23, 33, 43, 0.08);
 }
 
+.filter-groups {
+  display: grid;
+  gap: 10px;
+  justify-items: end;
+}
+
 .filters-row {
   justify-content: flex-start;
   margin: 18px 0;
@@ -1059,8 +1065,13 @@ body.patient-mode .form-actions {
   }
 
   .top-actions,
-  .segmented {
+  .segmented,
+  .filter-groups {
     width: 100%;
+  }
+
+  .filter-groups {
+    justify-items: stretch;
   }
 
   .primary-button {

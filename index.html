@@ -108,13 +108,21 @@
               <h2>Painel administrativo</h2>
               <p>Fila de acompanhamento organizada por prioridade clínica.</p>
             </div>
-            <div class="segmented" role="tablist" aria-label="Filtro por classificação">
-              <button class="segment is-active" data-filter="Todos" type="button">Todos</button>
-              <button class="segment" data-filter="Verde" type="button">Verde</button>
-              <button class="segment" data-filter="Amarelo" type="button">Amarelo</button>
-              <button class="segment" data-filter="Vermelho" type="button">Vermelho</button>
-              <button class="segment" data-filter="Pendente" type="button">Pendente</button>
-              <button class="segment" data-filter="Pronto para envio" type="button">Pronto para envio</button>
+            <div class="filter-groups">
+              <div class="segmented" role="tablist" aria-label="Filtro por classificação">
+                <button class="segment is-active" data-classification-filter="Todos" type="button">Todos</button>
+                <button class="segment" data-classification-filter="Verde" type="button">Verde</button>
+                <button class="segment" data-classification-filter="Amarelo" type="button">Amarelo</button>
+                <button class="segment" data-classification-filter="Vermelho" type="button">Vermelho</button>
+                <button class="segment" data-classification-filter="Pendente" type="button">Pendente</button>
+              </div>
+              <div class="segmented" role="tablist" aria-label="Filtro por status operacional">
+                <button class="segment is-active" data-status-filter="Todos" type="button">Todos status</button>
+                <button class="segment" data-status-filter="Pronto para enviar" type="button">Prontos</button>
+                <button class="segment" data-status-filter="Atrasado" type="button">Atrasados</button>
+                <button class="segment" data-status-filter="WhatsApp enviado" type="button">Enviados</button>
+                <button class="segment" data-status-filter="Formulário respondido" type="button">Respondidos</button>
+              </div>
             </div>
           </div>
 
