@@ -435,8 +435,19 @@ async function route(event) {
   }
 
   if (method === "GET" && path === "/api/health") {
-    await checkDatabase();
-    return jsonResponse(200, { ok: true, database: "connected" });
+    try {
+      await checkDatabase();
+      return jsonResponse(200, { ok: true, database: "connected", target: databaseTargetInfo() });
+    } catch (error) {
+      console.error(redactLogValue(error.message || "Erro interno"));
+      return jsonResponse(500, {
+        ok: false,
+        error: publicErrorMessage(error),
+        code: String(error?.code || ""),
+        detail: safeDiagnosticMessage(error),
+        target: databaseTargetInfo(),
+      });
+    }
   }
 
   if (method === "POST" && path === "/api/login") {
@@ -626,6 +637,27 @@ function publicErrorMessage(error) {
   }
 
   return "Erro interno do servidor. Verifique os logs das funções no Netlify.";
+}
+
+function databaseTargetInfo() {
+  try {
+    const url = new URL(DATABASE_URL);
+    return {
+      host: url.hostname,
+      port: url.port,
+      user: decodeURIComponent(url.username || ""),
+      database: url.pathname.replace(/^\//, ""),
+    };
+  } catch {
+    return { host: "", port: "", user: "", database: "", invalidUrl: true };
+  }
+}
+
+function safeDiagnosticMessage(error) {
+  let message = redactLogValue(error?.message || "Erro interno");
+  if (DATABASE_URL) message = message.replaceAll(DATABASE_URL, "DATABASE_URL_REDACTED");
+  message = message.replace(/postgres(?:ql)?:\/\/[^@\s]+@/gi, "postgresql://REDACTED@");
+  return message.slice(0, 300);
 }
 
 function redactLogValue(value) {
