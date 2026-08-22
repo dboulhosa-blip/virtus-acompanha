@@ -591,10 +591,34 @@ tbody tr:last-child td {
   color: var(--blue-dark);
 }
 
+.status-pill.is-answered {
+  border-color: #d7dee6;
+  background: #f5f7f9;
+  color: var(--muted);
+}
+
 .status-pill.is-sent {
   border-color: #c8d7ed;
   background: #edf4ff;
   color: #2f5f9a;
+}
+
+.status-pill.is-ready {
+  border-color: #bde7d2;
+  background: #e6f7f1;
+  color: #087444;
+}
+
+.status-pill.is-waiting {
+  border-color: #f0d89a;
+  background: #fff7df;
+  color: #8a5b00;
+}
+
+.status-pill.is-overdue {
+  border-color: #f3c1c1;
+  background: #fdecec;
+  color: #a72d2d;
 }
 
 .send-date {
@@ -622,6 +646,12 @@ tbody tr:last-child td {
   border-color: #bde7d2;
   background: #e6f7f1;
   color: #087444;
+}
+
+.schedule-pill.is-overdue {
+  border-color: #f3c1c1;
+  background: #fdecec;
+  color: #a72d2d;
 }
 
 .schedule-pill.is-waiting {

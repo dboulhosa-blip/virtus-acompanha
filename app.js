@@ -282,12 +282,13 @@ function getSendSchedule(patient) {
   }
 
   const today = parseLocalDate(toDateInputValue(new Date()));
+  const isOverdue = sendDate < today;
   const isReady = sendDate <= today;
 
   return {
     dateText,
-    label: isReady ? "Pronto para envio" : `Aguardando dia ${dateText}`,
-    state: isReady ? "ready" : "waiting",
+    label: isOverdue ? "Atrasado" : isReady ? "Pronto para enviar" : `Aguardando dia ${dateText}`,
+    state: isOverdue ? "overdue" : isReady ? "ready" : "waiting",
   };
 }
 
@@ -368,8 +369,23 @@ function getFilteredPatients({ includeSearch = false } = {}) {
 
 function statusPillClass(patient) {
   if (patient.decision) return "status-pill is-decided";
+  if (patient.status === "Formulário respondido") return "status-pill is-answered";
   if (patient.status === "WhatsApp enviado") return "status-pill is-sent";
-  return "status-pill";
+  const schedule = getSendSchedule(patient);
+  if (schedule.state === "overdue") return "status-pill is-overdue";
+  if (schedule.state === "ready") return "status-pill is-ready";
+  return "status-pill is-waiting";
+}
+
+function operationalStatusLabel(patient) {
+  if (patient.decision) return patient.decision;
+  if (patient.status === "Formulário respondido") return "Formulário respondido";
+  if (patient.status === "WhatsApp enviado") return "WhatsApp enviado";
+
+  const schedule = getSendSchedule(patient);
+  if (schedule.state === "overdue") return "Atrasado";
+  if (schedule.state === "ready") return "Pronto para enviar";
+  return "Aguardando data de envio";
 }
 
 function renderMetrics() {
@@ -477,7 +493,7 @@ function renderTable() {
     });
     const status = createElement("span", {
       className: statusPillClass(patient),
-      text: patient.decision || patient.status,
+      text: operationalStatusLabel(patient),
     });
     const schedule = getSendSchedule(patient);
     const scheduleCell = createElement("td");
