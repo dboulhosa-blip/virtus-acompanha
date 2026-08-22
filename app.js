@@ -89,19 +89,17 @@ async function loadPatients() {
 
   try {
     const patientId = getPatientIdFromUrl();
-    const response = await fetch(patientId ? patientApiUrl(patientId) : API_URL);
-    if (!response.ok) throw new Error("API indisponível");
-    const apiPatients = await response.json();
+    const apiPatients = patientId ? await apiRequest(patientApiUrl(patientId)) : await apiRequest(API_URL);
     isApiStorageAvailable = true;
     if (patientId) return apiPatients?.id ? [apiPatients] : [];
     return Array.isArray(apiPatients) ? apiPatients : [...initialPatients];
-  } catch {
+  } catch (error) {
     isApiStorageAvailable = false;
     if (getPatientIdFromUrl()) {
-      classificationOutput.textContent = "Não foi possível validar este link no servidor.";
+      classificationOutput.textContent = error.message || "Não foi possível validar este link no servidor.";
       return [];
     }
-    showOperationalError("Não foi possível carregar os dados do servidor.");
+    showOperationalError(error.message || "Não foi possível carregar os dados do servidor.");
     return [];
   }
 }
@@ -865,7 +863,7 @@ async function createRegisteredPatient(data) {
     decision: "",
   };
 
-  if (isApiStorageAvailable && window.location.protocol !== "file:") {
+  if (window.location.protocol !== "file:") {
     const savedPatient = await apiRequest(API_URL, {
       body: JSON.stringify(patient),
       method: "POST",
