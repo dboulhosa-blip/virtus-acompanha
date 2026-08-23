@@ -323,6 +323,7 @@ function normalizePatientRecord(patient) {
     summary: cleanText(patient.summary, 600),
     notes: cleanText(patient.notes, 600),
     decision: cleanText(patient.decision, 80),
+    returnSentAt: cleanText(patient.returnSentAt, 40),
     formToken: cleanText(patient.formToken, 160) || crypto.randomBytes(32).toString("base64url"),
   };
   if (!normalized.name) throw new Error("Nome do paciente é obrigatório");
@@ -344,6 +345,7 @@ function prepareRegisteredPatient(patient) {
     summary: "Paciente cadastrado e aguardando resposta do formulário de acompanhamento.",
     notes: "",
     decision: "",
+    returnSentAt: "",
     formToken: crypto.randomBytes(32).toString("base64url"),
   };
 
@@ -418,6 +420,7 @@ function applyResponse(patient, data) {
     summary: buildSummary(data),
     notes: cleanText(data.notes, 600),
     decision: "",
+    returnSentAt: "",
   };
 }
 
@@ -578,6 +581,7 @@ async function route(event) {
       updatedPatient = {
         ...patient,
         decision,
+        returnSentAt: "",
         status: "Decisão médica registrada",
         action: `${decision} definido pelo médico`,
       };
@@ -613,6 +617,32 @@ async function route(event) {
 
     await writePatients(nextPatients);
     await recordAuditEvent("whatsapp_sent", patientId, "admin");
+    return jsonResponse(200, updatedPatient);
+  }
+
+  if (method === "PATCH" && path.startsWith("/api/patients/") && path.endsWith("/return-sent")) {
+    const authError = requireAuth(event);
+    if (authError) return authError;
+    const sameOriginError = requireSameOrigin(event);
+    if (sameOriginError) return sameOriginError;
+
+    const patientId = patientIdFromPath(path, "/return-sent");
+    if (!PATIENT_ID_PATTERN.test(patientId)) return jsonResponse(404, { error: "Paciente não encontrado" });
+    const sentAt = cleanText(parseBody(event).sentAt, 40) || new Date().toISOString();
+    const patients = await readPatients();
+    let updatedPatient = null;
+    const nextPatients = patients.map((patient) => {
+      if (patient.id !== patientId) return patient;
+      updatedPatient = {
+        ...patient,
+        returnSentAt: sentAt,
+      };
+      return updatedPatient;
+    });
+    if (!updatedPatient) return jsonResponse(404, { error: "Paciente não encontrado" });
+
+    await writePatients(nextPatients);
+    await recordAuditEvent("patient_return_sent", patientId, "admin");
     return jsonResponse(200, updatedPatient);
   }
 

@@ -579,6 +579,18 @@ tbody tr:last-child td {
   font-weight: 750;
 }
 
+.patient-return-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  border-radius: 8px;
+  background: #0b8f55;
+  color: #ffffff;
+  font-weight: 800;
+  text-decoration: none;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;

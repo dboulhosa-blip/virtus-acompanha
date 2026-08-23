@@ -338,6 +338,25 @@ function getWhatsAppUrl(patient) {
   )}`;
 }
 
+function buildPatientReturnMessage(patient) {
+  const doctor = patient.doctor || "médico responsável";
+  const greetings = `Olá, ${patient.name}. O(a) ${doctor} avaliou suas respostas do acompanhamento.`;
+  const messages = {
+    "Manter retorno": "Neste momento, seu retorno será mantido conforme agendado. Caso perceba piora importante antes da consulta, entre em contato com a clínica.",
+    "Postergar retorno": "Neste momento, há possibilidade de postergar seu retorno. A clínica entrará em contato para confirmar a nova data.",
+    "Solicitar contato": "Foi solicitado contato com você. Por favor, responda esta mensagem ou entre em contato com a clínica.",
+    "Antecipar consulta": "Foi orientado antecipar seu contato. Por favor, responda esta mensagem ou entre em contato com a clínica para alinharmos o próximo atendimento.",
+  };
+
+  return `${greetings} ${messages[patient.decision] || "A clínica entrará em contato para orientar os próximos passos."}`;
+}
+
+function getPatientReturnWhatsAppUrl(patient) {
+  return `https://wa.me/${normalizePhone(patient.phone || "")}?text=${encodeURIComponent(
+    buildPatientReturnMessage(patient),
+  )}`;
+}
+
 function getActionForClassification(classification) {
   const actions = {
     Verde: "Avaliar possibilidade de postergar o retorno",
@@ -418,6 +437,7 @@ function auditEventLabel(event) {
     whatsapp_sent: "WhatsApp marcado como enviado",
     patient_response: "Formulário respondido",
     medical_decision: "Decisão médica registrada",
+    patient_return_sent: "Retorno ao paciente enviado",
   };
 
   return labels[event.type] || "Atividade registrada";
@@ -554,6 +574,25 @@ function createHistoryAction(patient) {
   return button;
 }
 
+function createPatientReturnAction(patient) {
+  if (!patient.decision) return null;
+
+  if (!patient.phone) {
+    return createElement("span", { className: "patient-meta", text: "Sem telefone para retorno" });
+  }
+
+  const action = createElement("a", {
+    className: "patient-return-action",
+    href: getPatientReturnWhatsAppUrl(patient),
+    target: "_blank",
+    rel: "noreferrer",
+    text: patient.returnSentAt ? "Reenviar retorno ao paciente" : "Enviar retorno ao paciente",
+  });
+
+  action.addEventListener("click", () => markPatientReturnSent(patient.id));
+  return action;
+}
+
 function renderDoctorCards() {
   const cards = getFilteredPatients({ includeSearch: true });
   doctorCards.replaceChildren();
@@ -590,7 +629,9 @@ function renderDoctorCards() {
     const decisions = createElement("div", { className: "decision-grid" });
     const feedback = createElement("p", {
       className: patient.decision ? "decision-note is-visible" : "decision-note",
-      text: patient.decision ? `Decisão registrada: ${patient.decision}` : "",
+      text: patient.decision
+        ? `Decisão registrada: ${patient.decision}${patient.returnSentAt ? ". Retorno ao paciente enviado." : ""}`
+        : "",
     });
 
     ["Manter retorno", "Postergar retorno", "Solicitar contato", "Antecipar consulta"].forEach(
@@ -604,7 +645,9 @@ function renderDoctorCards() {
 
     patientInfo.append(name, meta);
     cardTop.append(patientInfo, badge);
+    const patientReturnAction = createPatientReturnAction(patient);
     card.append(cardTop, summary, notes, decisions, feedback);
+    if (patientReturnAction) card.append(patientReturnAction);
     doctorCards.append(card);
   });
 }
@@ -750,6 +793,7 @@ async function registerDecision(patientId, decision) {
       ? {
           ...patient,
           decision,
+          returnSentAt: "",
           status: "Decisão médica registrada",
           action: `${decision} definido pelo médico`,
         }
@@ -794,6 +838,41 @@ async function markWhatsAppSent(patientId) {
   }
 }
 
+async function markPatientReturnSent(patientId) {
+  const sentAt = new Date().toISOString();
+  const currentPatient = patients.find((patient) => patient.id === patientId);
+  if (!currentPatient) return;
+
+  const updatedPatient = {
+    ...currentPatient,
+    returnSentAt: sentAt,
+  };
+
+  if (isApiStorageAvailable && window.location.protocol !== "file:") {
+    try {
+      const savedPatient = await apiRequest(`${API_URL}/${patientId}/return-sent`, {
+        body: JSON.stringify({ sentAt }),
+        method: "PATCH",
+      });
+      patients = patients.map((patient) => (patient.id === patientId ? savedPatient : patient));
+      auditEvents = await loadAuditEvents();
+      render();
+      return;
+    } catch {
+      classificationOutput.textContent = "Não foi possível registrar o retorno ao paciente.";
+    }
+  }
+
+  if (!isLocalFallbackAllowed()) {
+    classificationOutput.textContent = "Servidor indisponível. O retorno ao paciente não foi registrado.";
+    return;
+  }
+
+  patients = patients.map((patient) => (patient.id === patientId ? updatedPatient : patient));
+  await savePatients();
+  render();
+}
+
 async function createFollowup(data, linkedPatient = null) {
   const classification = classifyForm(data);
   const today = new Date();
@@ -822,6 +901,7 @@ async function createFollowup(data, linkedPatient = null) {
       summary: buildSummary(data),
       notes: data.get("notes")?.trim() || "",
       decision: "",
+      returnSentAt: "",
     };
 
     if (!isLocalFallbackAllowed()) {
@@ -849,6 +929,7 @@ async function createFollowup(data, linkedPatient = null) {
     summary: buildSummary(data),
     notes: data.get("notes")?.trim() || "",
     decision: "",
+    returnSentAt: "",
   };
 
   if (!isLocalFallbackAllowed()) {
@@ -876,6 +957,7 @@ async function createRegisteredPatient(data) {
     summary: "Paciente cadastrado e aguardando resposta do formulário de acompanhamento.",
     notes: "",
     decision: "",
+    returnSentAt: "",
   };
 
   if (window.location.protocol !== "file:") {
@@ -1005,6 +1087,7 @@ function historyEventDetail(event, patient) {
     whatsapp_sent: "Envio do formulário marcado no painel.",
     patient_response: "Resposta recebida e classificação atualizada.",
     medical_decision: patient.decision || "Decisão médica registrada.",
+    patient_return_sent: "Mensagem de retorno preparada e marcada para envio.",
   };
 
   return details[event.type] || "Atividade operacional registrada.";
