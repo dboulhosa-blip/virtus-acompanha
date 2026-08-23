@@ -13,7 +13,8 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const SENSITIVE_KEYS = new Set(["password", "token", "formToken", "virtus_session", "session"]);
 const ALLOWED_DECISIONS = new Set([
   "Manter retorno",
-  "Postergar retorno",
+  "Postergar para 30 dias",
+  "Postergar para 60 dias",
   "Solicitar contato",
   "Antecipar consulta",
 ]);
@@ -385,7 +386,7 @@ function classifyResponse(data) {
 
 function actionForClassification(classification) {
   return {
-    Verde: "Avaliar possibilidade de postergar o retorno",
+    Verde: "Avaliar postergar retorno para 30 ou 60 dias",
     Amarelo: "Manter retorno previamente agendado",
     Vermelho: "Destacar para avaliação médica prioritária",
   }[classification] || "Revisar acompanhamento";

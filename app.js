@@ -343,7 +343,8 @@ function buildPatientReturnMessage(patient) {
   const greetings = `Olá, ${patient.name}. O(a) ${doctor} avaliou suas respostas do acompanhamento.`;
   const messages = {
     "Manter retorno": "Neste momento, seu retorno será mantido conforme agendado. Caso perceba piora importante antes da consulta, entre em contato com a clínica.",
-    "Postergar retorno": "Neste momento, há possibilidade de postergar seu retorno. A clínica entrará em contato para confirmar a nova data.",
+    "Postergar para 30 dias": "Como você está evoluindo bem, não será necessário comparecer ao retorno curto previamente previsto. A clínica entrará em contato para agendar sua próxima consulta em aproximadamente 30 dias.",
+    "Postergar para 60 dias": "Como você está evoluindo bem, não será necessário comparecer ao retorno curto previamente previsto. A clínica entrará em contato para agendar sua próxima consulta em aproximadamente 60 dias.",
     "Solicitar contato": "Foi solicitado contato com você. Por favor, responda esta mensagem ou entre em contato com a clínica.",
     "Antecipar consulta": "Foi orientado antecipar seu contato. Por favor, responda esta mensagem ou entre em contato com a clínica para alinharmos o próximo atendimento.",
   };
@@ -359,7 +360,7 @@ function getPatientReturnWhatsAppUrl(patient) {
 
 function getActionForClassification(classification) {
   const actions = {
-    Verde: "Avaliar possibilidade de postergar o retorno",
+    Verde: "Avaliar postergar retorno para 30 ou 60 dias",
     Amarelo: "Manter retorno previamente agendado",
     Vermelho: "Destacar para avaliação médica prioritária",
   };
@@ -634,7 +635,7 @@ function renderDoctorCards() {
         : "",
     });
 
-    ["Manter retorno", "Postergar retorno", "Solicitar contato", "Antecipar consulta"].forEach(
+    ["Manter retorno", "Postergar para 30 dias", "Postergar para 60 dias", "Solicitar contato", "Antecipar consulta"].forEach(
       (decision) => {
         const button = createElement("button", { type: "button", text: decision });
         button.classList.toggle("is-selected", patient.decision === decision);
