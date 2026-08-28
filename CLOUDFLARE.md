@@ -2,11 +2,11 @@
 
 Este projeto pode rodar no Cloudflare Pages com Functions e Supabase.
 
-## Configuracao do Pages
+## Configuracao do Workers e Pages
 
 - Build command: `npm run build`
+- Deploy command: `npx wrangler deploy`
 - Build output directory: `dist`
-- Functions directory: `functions`
 - Compatibility date: `2026-08-23`
 - Compatibility flag: `nodejs_compat`
 
