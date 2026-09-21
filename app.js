@@ -1,7 +1,7 @@
 const STORAGE_KEY = "virtus-acompanha-patients";
 const API_URL = "/api/patients";
 const FOLLOWUP_DELAY_DAYS = 12;
-const PUBLIC_APP_URL = "https://virtus-acompanha.onrender.com/";
+const PUBLIC_APP_URL = "https://virtus-acompanha.pages.dev/";
 
 const initialPatients = [];
 

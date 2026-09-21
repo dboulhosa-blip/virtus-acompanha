@@ -30,7 +30,7 @@ Formato da conexao do Supabase Pooler:
 postgresql://postgres.tnsvgpyaacwdyyhkcxew:SENHA_DO_BANCO@aws-1-sa-east-1.pooler.supabase.com:6543/postgres
 ```
 
-Se a senha tiver caracteres especiais, mantenha a versao codificada que ja funcionou no Netlify.
+Se a senha tiver caracteres especiais, mantenha a versao codificada (URL-encoded).
 
 ## Teste
 
