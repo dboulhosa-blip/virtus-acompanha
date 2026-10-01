@@ -78,7 +78,6 @@ function normalizePath(event) {
   }
 
   let path = event.path || "/api";
-  path = path.replace(/^\/\.netlify\/functions\/api/, "/api");
   if (!path.startsWith("/api")) path = `/api/${path.replace(/^\/+/, "")}`;
   return path;
 }
