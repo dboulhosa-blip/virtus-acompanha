@@ -51,11 +51,39 @@
   .row { display:flex; justify-content:space-between; font-size:14px; margin:4px 0; }
   .row.total { font-weight:800; font-size:16px; }
   .primary { width:100%; margin-top:10px; background:var(--red); color:#fff; border:0; border-radius:8px; padding:12px; font-weight:700; font-size:15px; cursor:pointer; }
-  .primary:disabled { background:#ccc; cursor:not-allowed; }
-  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#333; color:#fff; padding:10px 16px; border-radius:8px; font-size:14px; display:none; z-index:20; }
+  .primary:disabled { background:var(--line); color:var(--muted); cursor:not-allowed; }
+  .toast { position:fixed; bottom:calc(110px + env(safe-area-inset-bottom,0px)); left:50%; transform:translateX(-50%); background:#333; color:#fff; padding:10px 16px; border-radius:8px; font-size:14px; display:none; z-index:20; }
   .steps { list-style:none; padding:0; }
   .steps li { padding:10px 0; color:var(--muted); }
   .steps li.done { color:#50a773; font-weight:700; }
+  .sec { padding:14px 0; border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:10px; }
+  .sec:last-child { border-bottom:0; }
+  .sec h4 { margin:0; font-size:15px; }
+  .sec h4 small, .lbl { font-weight:400; font-size:12px; color:var(--muted); }
+  .sec-head { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .link { border:0; background:none; color:var(--red); font-weight:700; cursor:pointer; padding:0; font-size:13px; }
+  .field { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font:inherit; font-size:14px; background:var(--input); color:var(--text); resize:vertical; }
+  .field:focus, button:focus-visible { outline:2px solid var(--red); outline-offset:1px; }
+  .inline { display:flex; gap:8px; } .inline .field { min-width:0; }
+  .seg { display:grid; grid-template-columns:1fr 1fr; background:var(--input); border-radius:10px; padding:4px; gap:4px; }
+  .seg button { border:0; background:none; color:var(--muted); padding:9px; border-radius:8px; font-weight:700; cursor:pointer; }
+  .seg button.on { background:var(--card); color:var(--red); box-shadow:0 1px 3px rgba(0,0,0,.12); }
+  .addr-box { background:var(--input); border-radius:8px; padding:10px 12px; font-size:13px; line-height:1.5; }
+  .addr-box small { color:var(--muted); }
+  .pays { display:flex; flex-direction:column; gap:8px; }
+  .pay { display:flex; align-items:center; gap:12px; text-align:left; border:1px solid var(--line); background:var(--card); color:var(--text); border-radius:10px; padding:10px 12px; cursor:pointer; font:inherit; }
+  .pay small { display:block; color:var(--muted); font-size:12px; }
+  .pay > span:nth-child(2) { flex:1; min-width:0; }
+  .pay-ic { font-size:22px; }
+  .radio { width:18px; height:18px; border-radius:50%; border:2px solid var(--line); flex:0 0 auto; }
+  .pay.on { border-color:var(--red); }
+  .pay.on .radio { border:5px solid var(--red); }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; }
+  .ok { color:#50a773; font-weight:600; }
+  .warn { font-size:12px; color:var(--red); text-align:center; margin-top:8px; }
+  .pix { border:1px dashed var(--line); border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+  .pix-code { font-family:ui-monospace,monospace; font-size:11px; background:var(--input); padding:8px; border-radius:6px; word-break:break-all; user-select:all; }
+  .pix small { color:var(--muted); }
   .note { font-size:11px; color:var(--muted); text-align:center; margin-top:24px; }
 </style>
 <header>
@@ -89,6 +117,7 @@
 <aside class="panel" id="menuPanel">
   <div class="panel-head"><h2 id="menuTitle"></h2><button class="x" data-close>×</button></div>
   <div class="panel-body" id="menuBody"></div>
+  <div class="panel-foot" id="menuFoot" hidden></div>
 </aside>
 <aside class="panel" id="cartPanel">
   <div class="panel-head"><h2>Sacola</h2><button class="x" data-close>×</button></div>
@@ -125,7 +154,8 @@ const RESTS = [
     menu:[["Água com gás","500ml",4.5],["Suco natural laranja","1L",14],["Energético","473ml",11.9]] },
 ];
 
-const state = { cat:"Todos", q:"", filters:new Set(), sort:"rel", cart:[], cartRest:null, coupon:false };
+const state = { cat:"Todos", q:"", filters:new Set(), sort:"rel", cart:[], cartRest:null, coupon:false,
+  co:{ mode:"delivery", pay:null, change:"", tip:0, note:"", cpf:"" } };
 const $ = s => document.querySelector(s);
 const brl = v => v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -175,7 +205,7 @@ function openMenu(id){
     (r.open ? "" : `<p style="color:var(--red)">Loja fechada no momento.</p>`) +
     r.menu.map((m,i)=>`<div class="item"><div><b>${esc(m[0])}</b><p>${esc(m[1])}</p><b>${brl(m[2])}</b></div>
       ${r.open?`<button class="add" data-add="${r.id}:${i}">Adicionar</button>`:""}</div>`).join("");
-  openPanel("#menuPanel");
+  closePanels(); openPanel("#menuPanel");
 }
 
 function addToCart(restId, idx){
@@ -190,50 +220,153 @@ function addToCart(restId, idx){
   renderCart(); toast(`${m[0]} adicionado à sacola`);
 }
 
+const PAYS = {
+  pix:    { label:"Pix", icon:"⚡", hint:"Aprovação na hora", online:true },
+  credit: { label:"Cartão de crédito", icon:"💳", hint:"Visa •••• 4321", online:true },
+  card:   { label:"Cartão na entrega", icon:"📟", hint:"Crédito ou débito na maquininha", online:false },
+  cash:   { label:"Dinheiro", icon:"💵", hint:"Informe se precisa de troco", online:false },
+};
+const TIPS = [0, 2, 5, 8];
+const STORE_ADDR = "Av. dos Restaurantes, 500";
+
 function totals(){
   const sub = state.cart.reduce((s,l)=>s+l.price*l.qty,0);
-  const fee = state.cartRest ? RESTS.find(x=>x.id===state.cartRest).fee : 0;
+  const pickup = state.co.mode==="pickup";
+  const fee = state.cartRest && !pickup ? RESTS.find(x=>x.id===state.cartRest).fee : 0;
   const disc = state.coupon ? sub*0.10 : 0;
-  return { sub, fee, disc, total: sub+fee-disc, count: state.cart.reduce((s,l)=>s+l.qty,0) };
+  const tip = pickup ? 0 : state.co.tip;
+  return { sub, fee, disc, tip, total: sub+fee+tip-disc, count: state.cart.reduce((s,l)=>s+l.qty,0) };
+}
+
+function checkoutProblem(){
+  const t = totals(), co = state.co;
+  if (!co.pay) return "Escolha a forma de pagamento";
+  if (co.pay==="cash" && co.change){
+    const v = parseFloat(co.change.replace(",", "."));
+    if (!(v >= t.total)) return `O troco deve ser para pelo menos ${brl(t.total)}`;
+  }
+  const cpf = co.cpf.replace(/\D/g,"");
+  if (cpf && cpf.length!==11) return "CPF deve ter 11 dígitos";
+  return "";
 }
 
 function renderCart(){
-  const t = totals();
+  const t = totals(), co = state.co;
   $("#cartCount").textContent = t.count;
   $("#cartTotal").textContent = brl(t.count ? t.total : 0);
+  $("#menuFoot").hidden = !t.count;
+  $("#menuFoot").innerHTML = `<button class="primary" id="goCart">Ver sacola · ${t.count} ${t.count>1?"itens":"item"} · ${brl(t.total)}</button>`;
   if (!state.cart.length){
-    $("#cartBody").innerHTML = `<div class="empty">Sua sacola está vazia.</div>`;
+    $("#cartBody").innerHTML = `<div class="empty">Sua sacola está vazia.<br><small>Escolha uma loja para começar.</small></div>`;
     $("#cartFoot").innerHTML = "";
     return;
   }
   const r = RESTS.find(x=>x.id===state.cartRest);
-  $("#cartBody").innerHTML = `<div class="meta">Pedido em <b>${esc(r.name)}</b></div>` +
-    state.cart.map((l,i)=>`<div class="item"><div><b>${esc(l.name)}</b><p>${brl(l.price)}</p></div>
-      <div class="qty"><button data-dec="${i}">−</button>${l.qty}<button data-inc="${i}">+</button></div></div>`).join("") +
-    `<div style="display:flex;gap:8px;margin-top:12px"><input id="coupon" class="search" placeholder="Cupom" style="min-width:0">
-      <button class="add" id="applyCoupon">Aplicar</button></div>`;
+  const pickup = co.mode==="pickup";
+  $("#cartBody").innerHTML = `
+    <div class="sec">
+      <div class="sec-head"><span>${r.emoji} <b>${esc(r.name)}</b></span><button class="link" data-rest="${r.id}">Adicionar mais itens</button></div>
+      ${state.cart.map((l,i)=>`<div class="item"><div><b>${esc(l.name)}</b><p>${brl(l.price)} · ${brl(l.price*l.qty)}</p></div>
+        <div class="qty"><button data-dec="${i}" aria-label="Diminuir">${l.qty===1?"🗑":"−"}</button>${l.qty}<button data-inc="${i}" aria-label="Aumentar">+</button></div></div>`).join("")}
+      <textarea id="note" class="field" rows="2" placeholder="Alguma observação? Ex.: tirar a cebola, mandar talheres">${esc(co.note)}</textarea>
+    </div>
+
+    <div class="sec">
+      <h4>Como você quer receber?</h4>
+      <div class="seg">
+        <button data-mode="delivery" class="${pickup?"":"on"}">🛵 Entrega</button>
+        <button data-mode="pickup" class="${pickup?"on":""}">🏪 Retirar na loja</button>
+      </div>
+      <div class="addr-box">${pickup
+        ? `<b>Retirada em</b><br>${STORE_ADDR}<br><small>Pronto em ~${r.time-5} min · sem taxa de entrega</small>`
+        : `<b>Entregar em</b><br>Rua Fictícia, 123 · Apto 42<br><small>Hoje, ${r.time}-${r.time+10} min · ${t.fee?brl(t.fee):"entrega grátis"}</small>`}</div>
+    </div>
+
+    <div class="sec">
+      <h4>Pagamento</h4>
+      <div class="pays">${Object.entries(PAYS).map(([k,p])=>`
+        <button class="pay ${co.pay===k?"on":""}" data-pay="${k}">
+          <span class="pay-ic">${p.icon}</span>
+          <span><b>${p.label}</b><small>${p.online?"Pague pelo app":"Pague na entrega"} · ${p.hint}</small></span>
+          <span class="radio"></span>
+        </button>`).join("")}</div>
+      ${co.pay==="cash" ? `<label class="lbl" for="change">Troco para quanto? (deixe vazio se não precisar)</label>
+        <input id="change" class="field" inputmode="decimal" placeholder="Ex.: 100" value="${esc(co.change)}">` : ""}
+    </div>
+
+    ${pickup ? "" : `<div class="sec">
+      <h4>Gorjeta para o entregador <small>(100% vai para ele)</small></h4>
+      <div class="chips">${TIPS.map(v=>`<button class="chip ${co.tip===v?"on":""}" data-tip="${v}">${v?brl(v):"Sem gorjeta"}</button>`).join("")}</div>
+    </div>`}
+
+    <div class="sec">
+      <h4>Cupom</h4>
+      ${state.coupon
+        ? `<div class="sec-head"><span class="ok">✓ PRIMEIRA10 aplicado (10% off)</span><button class="link" id="removeCoupon">Remover</button></div>`
+        : `<div class="inline"><input id="coupon" class="field" placeholder="Digite o código"><button class="add" id="applyCoupon">Aplicar</button></div>`}
+    </div>
+
+    <div class="sec">
+      <label class="lbl" for="cpf">CPF na nota (opcional)</label>
+      <input id="cpf" class="field" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" value="${esc(co.cpf)}">
+    </div>`;
+  renderFoot();
+}
+
+function renderFoot(){
+  if (!state.cart.length) return;
+  const t = totals(), problem = checkoutProblem();
   $("#cartFoot").innerHTML = `
     <div class="row"><span>Subtotal</span><span>${brl(t.sub)}</span></div>
     <div class="row"><span>Taxa de entrega</span><span>${t.fee?brl(t.fee):"Grátis"}</span></div>
-    ${t.disc?`<div class="row" style="color:#50a773"><span>Cupom PRIMEIRA10</span><span>− ${brl(t.disc)}</span></div>`:""}
+    ${t.tip?`<div class="row"><span>Gorjeta</span><span>${brl(t.tip)}</span></div>`:""}
+    ${t.disc?`<div class="row ok"><span>Cupom PRIMEIRA10</span><span>− ${brl(t.disc)}</span></div>`:""}
     <div class="row total"><span>Total</span><span>${brl(t.total)}</span></div>
-    <button class="primary" id="checkout">Fazer pedido</button>`;
+    ${problem?`<div class="warn">${problem}</div>`:""}
+    <button class="primary" id="checkout" ${problem?"disabled":""}>Fazer pedido · ${brl(t.total)}</button>`;
 }
 
 function checkout(){
-  const t = totals(), r = RESTS.find(x=>x.id===state.cartRest);
-  const steps = ["Pedido confirmado pela loja","Em preparo","Saiu para entrega","Pedido entregue 🎉"];
-  $("#cartBody").innerHTML = `<p>Pedido #${Math.floor(1000+Math.random()*9000)} em <b>${esc(r.name)}</b> — ${brl(t.total)}</p>
+  if (checkoutProblem()) return;
+  const t = totals(), r = RESTS.find(x=>x.id===state.cartRest), co = { ...state.co };
+  const num = Math.floor(1000+Math.random()*9000);
+  const pickup = co.mode==="pickup";
+  const steps = ["Pedido confirmado pela loja","Em preparo", pickup?"Pronto para retirada":"Saiu para entrega", pickup?"Pedido retirado 🎉":"Pedido entregue 🎉"];
+  let payLine = PAYS[co.pay].label;
+  if (co.pay==="cash") payLine += co.change ? ` · troco para ${brl(parseFloat(co.change.replace(",", ".")))}` : " · sem troco";
+  $("#cartBody").innerHTML = `
+    <p>Pedido <b>#${num}</b> em <b>${esc(r.name)}</b></p>
+    <div class="addr-box"><b>${pickup?"Retirada":"Entrega"}</b> · ${pickup?STORE_ADDR:"Rua Fictícia, 123 · Apto 42"}<br>
+      <b>Pagamento</b> · ${payLine}<br><b>Total</b> · ${brl(t.total)}${co.note?`<br><b>Obs.</b> · ${esc(co.note)}`:""}</div>
+    ${co.pay==="pix" ? `<div class="pix" id="pixBox"><b>Pague com Pix para confirmar</b>
+      <div class="pix-code" id="pixCode">00020126PIX.FICTICIO.${num}5204000053039865406${t.total.toFixed(2)}5802BR</div>
+      <div class="inline"><button class="add" id="copyPix">Copiar código</button><button class="add" id="paidPix">Já paguei</button></div>
+      <small>Código fictício. Expira em 10 min.</small></div>` : ""}
     <ul class="steps">${steps.map(s=>`<li>○ ${s}</li>`).join("")}</ul>`;
   $("#cartFoot").innerHTML = "";
   state.cart = []; state.cartRest = null; state.coupon = false;
-  $("#cartCount").textContent = 0; $("#cartTotal").textContent = brl(0);
-  const lis = [...document.querySelectorAll(".steps li")];
-  lis.forEach((li,i)=>setTimeout(()=>{ li.classList.add("done"); li.textContent = "✓ "+steps[i]; }, 1500*(i+1)));
+  state.co = { ...state.co, note:"", change:"", tip:0 };
+  $("#cartCount").textContent = 0; $("#cartTotal").textContent = brl(0); $("#menuFoot").hidden = true;
+  state.startSteps = () => {
+    const lis = [...document.querySelectorAll(".steps li")];
+    lis.forEach((li,i)=>setTimeout(()=>{ li.classList.add("done"); li.textContent = "✓ "+steps[i]; }, 1500*(i+1)));
+  };
+  if (co.pay!=="pix") state.startSteps();
 }
 
+document.addEventListener("input", e => {
+  const id = e.target.id;
+  if (id==="note") state.co.note = e.target.value;
+  else if (id==="change"){ state.co.change = e.target.value.replace(/[^\d,.]/g,""); renderFoot(); }
+  else if (id==="cpf"){
+    const d = e.target.value.replace(/\D/g,"").slice(0,11);
+    e.target.value = d.replace(/(\d{3})(\d)/,"$1.$2").replace(/(\d{3})(\d)/,"$1.$2").replace(/(\d{3})(\d{1,2})$/,"$1-$2");
+    state.co.cpf = e.target.value; renderFoot();
+  }
+});
+
 document.addEventListener("click", e => {
-  const el = e.target.closest("[data-cat],[data-f],[data-rest],[data-add],[data-inc],[data-dec],[data-close],#cartBtn,#overlay,#applyCoupon,#checkout");
+  const el = e.target.closest("[data-cat],[data-f],[data-rest],[data-add],[data-inc],[data-dec],[data-mode],[data-pay],[data-tip],[data-close],#cartBtn,#goCart,#overlay,#applyCoupon,#removeCoupon,#checkout,#copyPix,#paidPix,#cartPanel,#menuPanel");
   if (!el) return;
   if (el.dataset.cat){ state.cat = el.dataset.cat; renderCats(); renderList(); }
   else if (el.dataset.f){ const f=el.dataset.f; state.filters.has(f)?state.filters.delete(f):state.filters.add(f); el.classList.toggle("on"); renderList(); }
@@ -241,10 +374,17 @@ document.addEventListener("click", e => {
   else if (el.dataset.add){ const [r,i]=el.dataset.add.split(":").map(Number); addToCart(r,i); }
   else if (el.dataset.inc){ state.cart[+el.dataset.inc].qty++; renderCart(); }
   else if (el.dataset.dec){ const l=state.cart[+el.dataset.dec]; if(--l.qty<=0) state.cart.splice(+el.dataset.dec,1); if(!state.cart.length){state.cartRest=null;state.coupon=false;} renderCart(); }
-  else if (el.id==="cartBtn"){ closePanels(); openPanel("#cartPanel"); }
+  else if (el.id==="cartBtn" || el.id==="goCart"){ closePanels(); openPanel("#cartPanel"); }
   else if (el.id==="applyCoupon"){ const c=$("#coupon").value.trim().toUpperCase(); if(c==="PRIMEIRA10"){state.coupon=true;renderCart();toast("Cupom aplicado!");} else toast("Cupom inválido"); }
+  else if (el.dataset.mode){ state.co.mode = el.dataset.mode; renderCart(); }
+  else if (el.dataset.pay){ state.co.pay = el.dataset.pay; renderCart(); }
+  else if (el.dataset.tip){ state.co.tip = +el.dataset.tip; renderCart(); }
+  else if (el.id==="removeCoupon"){ state.coupon = false; renderCart(); }
+  else if (el.id==="copyPix"){ const code=$("#pixCode").textContent;
+    navigator.clipboard.writeText(code).then(()=>toast("Código Pix copiado"), ()=>{ getSelection().selectAllChildren($("#pixCode")); toast("Selecione e copie o código"); }); }
+  else if (el.id==="paidPix"){ $("#pixBox").innerHTML = `<b class="ok">✓ Pagamento Pix recebido</b>`; state.startSteps(); }
   else if (el.id==="checkout") checkout();
-  else closePanels();
+  else if (el.dataset.close!==undefined || el.id==="overlay") closePanels();
 });
 $("#q").addEventListener("input", e => { state.q = e.target.value; renderList(); });
 $("#sort").addEventListener("change", e => { state.sort = e.target.value; renderList(); });
