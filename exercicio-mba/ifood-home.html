@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Delivery Home (estudo)</title>
+<style>
+  :root { --red:#ea1d2c; --bg:#f7f7f7; --card:#fff; --text:#3e3e3e; --muted:#717171; --line:#e6e6e6; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  header { position:sticky; top:0; z-index:5; background:#fff; border-bottom:1px solid var(--line); padding:12px 16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .logo { color:var(--red); font-weight:800; font-size:22px; letter-spacing:-.5px; }
+  .addr { font-size:13px; color:var(--muted); }
+  .addr b { color:var(--text); }
+  .search { flex:1; min-width:200px; padding:10px 14px; border:1px solid var(--line); border-radius:8px; font-size:15px; background:#f2f2f2; }
+  .cart-btn { background:var(--red); color:#fff; border:0; border-radius:8px; padding:10px 14px; font-weight:700; cursor:pointer; }
+  main { max-width:1100px; margin:0 auto; padding:16px; }
+  .banner { background:linear-gradient(90deg,var(--red),#ff6a4d); color:#fff; border-radius:12px; padding:18px; margin-bottom:16px; }
+  .banner h2 { margin:0 0 4px; }
+  .cats { display:flex; gap:10px; overflow-x:auto; padding-bottom:6px; margin-bottom:12px; }
+  .cat { flex:0 0 auto; background:#fff; border:1px solid var(--line); border-radius:12px; padding:10px 14px; text-align:center; cursor:pointer; font-size:13px; }
+  .cat span { display:block; font-size:26px; }
+  .cat.on { border-color:var(--red); color:var(--red); font-weight:700; }
+  .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; align-items:center; }
+  .chip { border:1px solid var(--line); background:#fff; border-radius:20px; padding:6px 12px; cursor:pointer; font-size:13px; }
+  .chip.on { background:var(--red); border-color:var(--red); color:#fff; }
+  select { border:1px solid var(--line); border-radius:20px; padding:6px 10px; font-size:13px; background:#fff; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; }
+  .rest { background:var(--card); border-radius:12px; padding:14px; display:flex; gap:12px; cursor:pointer; border:1px solid transparent; }
+  .rest:hover { border-color:var(--line); box-shadow:0 2px 8px rgba(0,0,0,.06); }
+  .rest.closed { opacity:.5; }
+  .thumb { width:64px; height:64px; border-radius:50%; background:#fde8ea; display:grid; place-items:center; font-size:32px; flex:0 0 auto; }
+  .rest h3 { margin:0 0 4px; font-size:16px; }
+  .meta { font-size:13px; color:var(--muted); }
+  .star { color:#e7a74e; font-weight:700; }
+  .free { color:#50a773; font-weight:600; }
+  .empty { text-align:center; color:var(--muted); padding:40px; }
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; z-index:10; }
+  .overlay.open { display:block; }
+  .panel { position:fixed; top:0; right:0; height:100%; width:min(420px,100%); background:#fff; z-index:11; transform:translateX(100%); transition:transform .2s; display:flex; flex-direction:column; }
+  .panel.open { transform:none; }
+  .panel-head { padding:16px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+  .panel-head h2 { margin:0; font-size:18px; }
+  .x { border:0; background:none; font-size:22px; cursor:pointer; }
+  .panel-body { padding:16px; overflow-y:auto; flex:1; }
+  .item { display:flex; justify-content:space-between; gap:10px; padding:12px 0; border-bottom:1px solid var(--line); }
+  .item p { margin:2px 0; font-size:13px; color:var(--muted); }
+  .add { border:1px solid var(--red); color:var(--red); background:#fff; border-radius:8px; padding:6px 10px; cursor:pointer; font-weight:700; align-self:center; }
+  .qty { display:flex; align-items:center; gap:8px; }
+  .qty button { width:28px; height:28px; border-radius:50%; border:1px solid var(--line); background:#fff; cursor:pointer; }
+  .panel-foot { padding:16px; border-top:1px solid var(--line); }
+  .row { display:flex; justify-content:space-between; font-size:14px; margin:4px 0; }
+  .row.total { font-weight:800; font-size:16px; }
+  .primary { width:100%; margin-top:10px; background:var(--red); color:#fff; border:0; border-radius:8px; padding:12px; font-weight:700; font-size:15px; cursor:pointer; }
+  .primary:disabled { background:#ccc; cursor:not-allowed; }
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#333; color:#fff; padding:10px 16px; border-radius:8px; font-size:14px; display:none; z-index:20; }
+  .steps { list-style:none; padding:0; }
+  .steps li { padding:10px 0; color:var(--muted); }
+  .steps li.done { color:#50a773; font-weight:700; }
+  .note { font-size:11px; color:var(--muted); text-align:center; margin-top:24px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">delivery<span style="color:#3e3e3e">.home</span></div>
+  <div class="addr">Entregar em <b>Rua Fictícia, 123</b></div>
+  <input id="q" class="search" placeholder="Busque por item ou loja" autocomplete="off">
+  <button class="cart-btn" id="cartBtn">🛒 <span id="cartCount">0</span> · <span id="cartTotal">R$ 0,00</span></button>
+</header>
+
+<main>
+  <div class="banner"><h2>Cupom PRIMEIRA10</h2><div>10% off no primeiro pedido — aplique no carrinho.</div></div>
+  <div class="cats" id="cats"></div>
+  <div class="filters">
+    <button class="chip" data-f="free">Entrega grátis</button>
+    <button class="chip" data-f="top">Avaliação 4.5+</button>
+    <button class="chip" data-f="fast">Até 30 min</button>
+    <button class="chip" data-f="open">Abertos agora</button>
+    <select id="sort">
+      <option value="rel">Ordenar: relevância</option>
+      <option value="rating">Melhor avaliação</option>
+      <option value="time">Menor tempo</option>
+      <option value="fee">Menor taxa</option>
+    </select>
+  </div>
+  <h3 id="title">Lojas</h3>
+  <div class="grid" id="list"></div>
+  <p class="note">Protótipo acadêmico (exercício de MBA) inspirado na tela principal de um app de delivery. Dados fictícios.</p>
+</main>
+
+<div class="overlay" id="overlay"></div>
+<aside class="panel" id="menuPanel">
+  <div class="panel-head"><h2 id="menuTitle"></h2><button class="x" data-close>×</button></div>
+  <div class="panel-body" id="menuBody"></div>
+</aside>
+<aside class="panel" id="cartPanel">
+  <div class="panel-head"><h2>Sacola</h2><button class="x" data-close>×</button></div>
+  <div class="panel-body" id="cartBody"></div>
+  <div class="panel-foot" id="cartFoot"></div>
+</aside>
+<div class="toast" id="toast"></div>
+
+<script>
+const CATS = [
+  ["Todos","🍽️"],["Lanches","🍔"],["Pizza","🍕"],["Japonesa","🍣"],["Brasileira","🍛"],
+  ["Doces","🍰"],["Saudável","🥗"],["Açaí","🍧"],["Bebidas","🥤"]
+];
+const RESTS = [
+  { id:1, name:"Burger do Bairro", cat:"Lanches", emoji:"🍔", rating:4.7, time:25, fee:0, open:true,
+    menu:[["Smash Duplo","Pão brioche, 2 carnes, cheddar",32.9],["Batata Rústica","Porção 300g",18],["Milkshake Ovomaltine","500ml",21.5]] },
+  { id:2, name:"Forno da Nonna", cat:"Pizza", emoji:"🍕", rating:4.8, time:45, fee:6.99, open:true,
+    menu:[["Margherita","Molho, muçarela, manjericão",49.9],["Calabresa","Calabresa e cebola",52.9],["Broto de Chocolate","4 fatias",29.9]] },
+  { id:3, name:"Sushi Kaizen", cat:"Japonesa", emoji:"🍣", rating:4.6, time:40, fee:8.5, open:true,
+    menu:[["Combo 20 peças","Sashimi, uramaki, niguiri",69.9],["Temaki Salmão","Com cream cheese",28],["Hot Roll","10 peças",24.9]] },
+  { id:4, name:"Cantinho Mineiro", cat:"Brasileira", emoji:"🍛", rating:4.4, time:35, fee:0, open:true,
+    menu:[["PF de Frango","Arroz, feijão, salada, fritas",27.9],["Feijoada Individual","Com couve e farofa",39.9],["Pão de Queijo","6 unidades",12]] },
+  { id:5, name:"Doce Encanto", cat:"Doces", emoji:"🍰", rating:4.9, time:30, fee:4.99, open:false,
+    menu:[["Bolo de Pote","Ninho com Nutella",16.9],["Brownie","Com sorvete",19.9]] },
+  { id:6, name:"Verde Bowl", cat:"Saudável", emoji:"🥗", rating:4.5, time:20, fee:0, open:true,
+    menu:[["Bowl Proteico","Frango, quinoa, legumes",34.9],["Suco Verde","400ml",12.5]] },
+  { id:7, name:"Açaí da Praia", cat:"Açaí", emoji:"🍧", rating:4.3, time:15, fee:2.99, open:true,
+    menu:[["Açaí 500ml","Com 3 complementos",22],["Açaí 700ml","Com 5 complementos",29]] },
+  { id:8, name:"Lanchonete 24h", cat:"Lanches", emoji:"🌭", rating:4.1, time:50, fee:3.5, open:true,
+    menu:[["Cachorro-quente","Completo",17],["X-Tudo","O clássico",29.9],["Refrigerante lata","350ml",6.5]] },
+  { id:9, name:"Pizzaria Express", cat:"Pizza", emoji:"🍕", rating:4.2, time:28, fee:0, open:true,
+    menu:[["Pizza Média Frango","Frango com catupiry",44.9],["Guaraná 2L","",13]] },
+  { id:10, name:"Empório das Bebidas", cat:"Bebidas", emoji:"🥤", rating:4.6, time:22, fee:5, open:true,
+    menu:[["Água com gás","500ml",4.5],["Suco natural laranja","1L",14],["Energético","473ml",11.9]] },
+];
+
+const state = { cat:"Todos", q:"", filters:new Set(), sort:"rel", cart:[], cartRest:null, coupon:false };
+const $ = s => document.querySelector(s);
+const brl = v => v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.style.display="block"; clearTimeout(t._h); t._h=setTimeout(()=>t.style.display="none",2200); }
+
+function renderCats(){
+  $("#cats").innerHTML = CATS.map(([n,e]) => `<div class="cat ${state.cat===n?"on":""}" data-cat="${n}"><span>${e}</span>${n}</div>`).join("");
+}
+
+function visibleRests(){
+  const q = state.q.trim().toLowerCase();
+  let r = RESTS.filter(x =>
+    (state.cat==="Todos" || x.cat===state.cat) &&
+    (!q || x.name.toLowerCase().includes(q) || x.cat.toLowerCase().includes(q) || x.menu.some(m=>m[0].toLowerCase().includes(q))) &&
+    (!state.filters.has("free") || x.fee===0) &&
+    (!state.filters.has("top") || x.rating>=4.5) &&
+    (!state.filters.has("fast") || x.time<=30) &&
+    (!state.filters.has("open") || x.open));
+  const by = { rating:(a,b)=>b.rating-a.rating, time:(a,b)=>a.time-b.time, fee:(a,b)=>a.fee-b.fee };
+  if (by[state.sort]) r = [...r].sort(by[state.sort]);
+  else r = [...r].sort((a,b)=>b.open-a.open);
+  return r;
+}
+
+function renderList(){
+  const r = visibleRests();
+  $("#title").textContent = `Lojas (${r.length})`;
+  $("#list").innerHTML = r.length ? r.map(x => `
+    <div class="rest ${x.open?"":"closed"}" data-rest="${x.id}">
+      <div class="thumb">${x.emoji}</div>
+      <div>
+        <h3>${esc(x.name)}</h3>
+        <div class="meta"><span class="star">★ ${x.rating.toFixed(1)}</span> · ${x.cat}</div>
+        <div class="meta">${x.time}-${x.time+10} min · ${x.fee? brl(x.fee) : '<span class="free">Grátis</span>'}${x.open?"":" · Fechado"}</div>
+      </div>
+    </div>`).join("") : `<div class="empty">Nenhuma loja encontrada para esses filtros.</div>`;
+}
+
+function openPanel(id){ $("#overlay").classList.add("open"); $(id).classList.add("open"); }
+function closePanels(){ document.querySelectorAll(".panel,.overlay").forEach(e=>e.classList.remove("open")); }
+
+function openMenu(id){
+  const r = RESTS.find(x=>x.id===id);
+  $("#menuTitle").textContent = `${r.emoji} ${r.name}`;
+  $("#menuBody").innerHTML = `<div class="meta" style="margin-bottom:8px">★ ${r.rating} · ${r.time}-${r.time+10} min · Entrega ${r.fee?brl(r.fee):"grátis"}</div>` +
+    (r.open ? "" : `<p style="color:var(--red)">Loja fechada no momento.</p>`) +
+    r.menu.map((m,i)=>`<div class="item"><div><b>${esc(m[0])}</b><p>${esc(m[1])}</p><b>${brl(m[2])}</b></div>
+      ${r.open?`<button class="add" data-add="${r.id}:${i}">Adicionar</button>`:""}</div>`).join("");
+  openPanel("#menuPanel");
+}
+
+function addToCart(restId, idx){
+  if (state.cartRest && state.cartRest!==restId){
+    if (!confirm("Sua sacola tem itens de outra loja. Limpar e adicionar este?")) return;
+    state.cart = []; state.coupon=false;
+  }
+  state.cartRest = restId;
+  const r = RESTS.find(x=>x.id===restId), m = r.menu[idx];
+  const line = state.cart.find(l=>l.name===m[0]);
+  line ? line.qty++ : state.cart.push({name:m[0], price:m[2], qty:1});
+  renderCart(); toast(`${m[0]} adicionado à sacola`);
+}
+
+function totals(){
+  const sub = state.cart.reduce((s,l)=>s+l.price*l.qty,0);
+  const fee = state.cartRest ? RESTS.find(x=>x.id===state.cartRest).fee : 0;
+  const disc = state.coupon ? sub*0.10 : 0;
+  return { sub, fee, disc, total: sub+fee-disc, count: state.cart.reduce((s,l)=>s+l.qty,0) };
+}
+
+function renderCart(){
+  const t = totals();
+  $("#cartCount").textContent = t.count;
+  $("#cartTotal").textContent = brl(t.count ? t.total : 0);
+  if (!state.cart.length){
+    $("#cartBody").innerHTML = `<div class="empty">Sua sacola está vazia.</div>`;
+    $("#cartFoot").innerHTML = "";
+    return;
+  }
+  const r = RESTS.find(x=>x.id===state.cartRest);
+  $("#cartBody").innerHTML = `<div class="meta">Pedido em <b>${esc(r.name)}</b></div>` +
+    state.cart.map((l,i)=>`<div class="item"><div><b>${esc(l.name)}</b><p>${brl(l.price)}</p></div>
+      <div class="qty"><button data-dec="${i}">−</button>${l.qty}<button data-inc="${i}">+</button></div></div>`).join("") +
+    `<div style="display:flex;gap:8px;margin-top:12px"><input id="coupon" class="search" placeholder="Cupom" style="min-width:0">
+      <button class="add" id="applyCoupon">Aplicar</button></div>`;
+  $("#cartFoot").innerHTML = `
+    <div class="row"><span>Subtotal</span><span>${brl(t.sub)}</span></div>
+    <div class="row"><span>Taxa de entrega</span><span>${t.fee?brl(t.fee):"Grátis"}</span></div>
+    ${t.disc?`<div class="row" style="color:#50a773"><span>Cupom PRIMEIRA10</span><span>− ${brl(t.disc)}</span></div>`:""}
+    <div class="row total"><span>Total</span><span>${brl(t.total)}</span></div>
+    <button class="primary" id="checkout">Fazer pedido</button>`;
+}
+
+function checkout(){
+  const t = totals(), r = RESTS.find(x=>x.id===state.cartRest);
+  const steps = ["Pedido confirmado pela loja","Em preparo","Saiu para entrega","Pedido entregue 🎉"];
+  $("#cartBody").innerHTML = `<p>Pedido #${Math.floor(1000+Math.random()*9000)} em <b>${esc(r.name)}</b> — ${brl(t.total)}</p>
+    <ul class="steps">${steps.map(s=>`<li>○ ${s}</li>`).join("")}</ul>`;
+  $("#cartFoot").innerHTML = "";
+  state.cart = []; state.cartRest = null; state.coupon = false;
+  $("#cartCount").textContent = 0; $("#cartTotal").textContent = brl(0);
+  const lis = [...document.querySelectorAll(".steps li")];
+  lis.forEach((li,i)=>setTimeout(()=>{ li.classList.add("done"); li.textContent = "✓ "+steps[i]; }, 1500*(i+1)));
+}
+
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-cat],[data-f],[data-rest],[data-add],[data-inc],[data-dec],[data-close],#cartBtn,#overlay,#applyCoupon,#checkout");
+  if (!el) return;
+  if (el.dataset.cat){ state.cat = el.dataset.cat; renderCats(); renderList(); }
+  else if (el.dataset.f){ const f=el.dataset.f; state.filters.has(f)?state.filters.delete(f):state.filters.add(f); el.classList.toggle("on"); renderList(); }
+  else if (el.dataset.rest) openMenu(+el.dataset.rest);
+  else if (el.dataset.add){ const [r,i]=el.dataset.add.split(":").map(Number); addToCart(r,i); }
+  else if (el.dataset.inc){ state.cart[+el.dataset.inc].qty++; renderCart(); }
+  else if (el.dataset.dec){ const l=state.cart[+el.dataset.dec]; if(--l.qty<=0) state.cart.splice(+el.dataset.dec,1); if(!state.cart.length){state.cartRest=null;state.coupon=false;} renderCart(); }
+  else if (el.id==="cartBtn"){ closePanels(); openPanel("#cartPanel"); }
+  else if (el.id==="applyCoupon"){ const c=$("#coupon").value.trim().toUpperCase(); if(c==="PRIMEIRA10"){state.coupon=true;renderCart();toast("Cupom aplicado!");} else toast("Cupom inválido"); }
+  else if (el.id==="checkout") checkout();
+  else closePanels();
+});
+$("#q").addEventListener("input", e => { state.q = e.target.value; renderList(); });
+$("#sort").addEventListener("change", e => { state.sort = e.target.value; renderList(); });
+document.addEventListener("keydown", e => { if (e.key==="Escape") closePanels(); });
+
+renderCats(); renderList(); renderCart();
+</script>
+</body>
+</html>
