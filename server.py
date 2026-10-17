@@ -161,12 +161,10 @@ class VirtusHandler(SimpleHTTPRequestHandler):
             except ValueError as error:
                 self.send_error_json(400, str(error))
                 return
-            patients = read_patients()
-            if len(patients) >= MAX_PATIENTS:
+            if count_patients() >= MAX_PATIENTS:
                 self.send_error_json(400, "Limite de pacientes atingido")
                 return
-            patients.insert(0, patient)
-            write_patients(patients)
+            create_patient(patient)
             record_audit_event("patient_registered", patient.get("id"), "admin")
             self.send_json(patient)
             return
@@ -182,8 +180,7 @@ class VirtusHandler(SimpleHTTPRequestHandler):
             if payload is None:
                 return
 
-            patients = read_patients()
-            patient = next((item for item in patients if item.get("id") == patient_id), None)
+            patient = find_patient(patient_id)
             if not patient:
                 self.send_error_json(404, "Paciente não encontrado")
                 return
@@ -195,13 +192,11 @@ class VirtusHandler(SimpleHTTPRequestHandler):
                 return
 
             try:
-                updated_patient = apply_response(patient, payload)
+                updated_fields = apply_response(patient, payload)
             except ValueError as error:
                 self.send_error_json(400, str(error))
                 return
-            write_patients([
-                updated_patient if item.get("id") == patient_id else item for item in patients
-            ])
+            updated_patient = update_patient(patient_id, updated_fields)
             record_audit_event("patient_response", patient_id, "patient")
             self.send_json(public_patient(updated_patient))
             return
@@ -230,26 +225,16 @@ class VirtusHandler(SimpleHTTPRequestHandler):
                 self.send_error_json(400, "Decisão inválida")
                 return
 
-            patients = read_patients()
-            updated_patient = None
-            next_patients = []
-            for patient in patients:
-                if patient.get("id") == patient_id:
-                    updated_patient = {
-                        **patient,
-                        "decision": decision,
-                        "status": "Decisão médica registrada",
-                        "action": f"{decision} definido pelo médico",
-                    }
-                    next_patients.append(updated_patient)
-                else:
-                    next_patients.append(patient)
-
+            updated_patient = update_patient(patient_id, {
+                "decision": decision,
+                "returnSentAt": "",
+                "status": "Decisão médica registrada",
+                "action": f"{decision} definido pelo médico",
+            })
             if not updated_patient:
                 self.send_error_json(404, "Paciente não encontrado")
                 return
 
-            write_patients(next_patients)
             record_audit_event("medical_decision", patient_id, "admin")
             self.send_json(updated_patient)
             return
@@ -264,26 +249,39 @@ class VirtusHandler(SimpleHTTPRequestHandler):
             if not PATIENT_ID_PATTERN.match(patient_id):
                 self.send_error_json(404, "Paciente não encontrado")
                 return
-            patients = read_patients()
-            updated_patient = None
-            next_patients = []
-            for patient in patients:
-                if patient.get("id") == patient_id:
-                    updated_patient = {
-                        **patient,
-                        "status": "WhatsApp enviado",
-                        "action": "Aguardando resposta do formulário",
-                    }
-                    next_patients.append(updated_patient)
-                else:
-                    next_patients.append(patient)
-
+            updated_patient = update_patient(patient_id, {
+                "status": "WhatsApp enviado",
+                "action": "Aguardando resposta do formulário",
+            })
             if not updated_patient:
                 self.send_error_json(404, "Paciente não encontrado")
                 return
 
-            write_patients(next_patients)
             record_audit_event("whatsapp_sent", patient_id, "admin")
+            self.send_json(updated_patient)
+            return
+
+        if path.startswith("/api/patients/") and path.endswith("/return-sent"):
+            if not self.require_auth():
+                return
+            if not self.require_same_origin():
+                return
+
+            patient_id = path.removeprefix("/api/patients/").removesuffix("/return-sent")
+            if not PATIENT_ID_PATTERN.match(patient_id):
+                self.send_error_json(404, "Paciente não encontrado")
+                return
+            payload = self.read_json_body()
+            if payload is None:
+                return
+
+            sent_at = clean_text(payload.get("sentAt"), 40) or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            updated_patient = update_patient(patient_id, {"returnSentAt": sent_at})
+            if not updated_patient:
+                self.send_error_json(404, "Paciente não encontrado")
+                return
+
+            record_audit_event("patient_return_sent", patient_id, "admin")
             self.send_json(updated_patient)
             return
 
@@ -610,6 +608,7 @@ def normalize_patient_record(patient):
         "summary": clean_text(patient.get("summary"), 600),
         "notes": clean_text(patient.get("notes"), 600),
         "decision": clean_text(patient.get("decision"), 80),
+        "returnSentAt": clean_text(patient.get("returnSentAt"), 40),
         "formToken": clean_text(patient.get("formToken"), 160) or secrets.token_urlsafe(32),
     }
 
@@ -633,6 +632,7 @@ def prepare_registered_patient(patient):
         "summary": "Paciente cadastrado e aguardando resposta do formulário de acompanhamento.",
         "notes": "",
         "decision": "",
+        "returnSentAt": "",
         "formToken": secrets.token_urlsafe(32),
     }
     if not normalized["name"]:
@@ -749,9 +749,46 @@ def write_patients(patients):
         json.dump(patients, file, ensure_ascii=False, indent=2)
 
 
+def count_patients():
+    if DATABASE_URL:
+        return count_patients_in_database()
+    return len(read_patients())
+
+
+def create_patient(patient):
+    if DATABASE_URL:
+        insert_patient_in_database(patient)
+        return
+
+    patients = read_patients()
+    patients.insert(0, patient)
+    write_patients(patients)
+
+
+def update_patient(patient_id, fields):
+    if DATABASE_URL:
+        return update_patient_in_database(patient_id, fields)
+
+    patients = read_patients()
+    updated_patient = None
+    next_patients = []
+    for patient in patients:
+        if patient.get("id") == patient_id:
+            updated_patient = {**patient, **fields}
+            next_patients.append(updated_patient)
+        else:
+            next_patients.append(patient)
+
+    if updated_patient is None:
+        return None
+
+    write_patients(next_patients)
+    return updated_patient
+
+
 def read_audit_events():
     if DATABASE_URL:
-        return read_state_from_database("audit_events")
+        return read_audit_events_from_database()
 
     if not AUDIT_FILE.exists():
         return []
@@ -762,10 +799,6 @@ def read_audit_events():
 
 def write_audit_events(events):
     events = events[:MAX_AUDIT_EVENTS]
-    if DATABASE_URL:
-        write_state_to_database("audit_events", events)
-        return
-
     DATA_DIR.mkdir(exist_ok=True)
     with AUDIT_FILE.open("w", encoding="utf-8") as file:
         json.dump(events, file, ensure_ascii=False, indent=2)
@@ -773,6 +806,10 @@ def write_audit_events(events):
 
 def record_audit_event(event_type, patient_id="", actor="system"):
     try:
+        if DATABASE_URL:
+            record_audit_event_in_database(event_type, patient_id, actor)
+            return
+
         event = {
             "id": secrets.token_urlsafe(12),
             "type": clean_text(event_type, 80),
@@ -786,6 +823,8 @@ def record_audit_event(event_type, patient_id="", actor="system"):
 
 
 def find_patient(patient_id):
+    if DATABASE_URL:
+        return read_patient_by_id_from_database(patient_id)
     return next((patient for patient in read_patients() if patient.get("id") == patient_id), None)
 
 
@@ -795,12 +834,35 @@ def db_connect():
     return psycopg.connect(DATABASE_URL)
 
 
+DATABASE_READY = False
+
+PATIENT_COLUMNS = {
+    "name": "name",
+    "phone": "phone",
+    "birthdate": "birthdate",
+    "doctor": "doctor",
+    "lastVisit": "last_visit",
+    "returnDate": "return_date",
+    "status": "status",
+    "classification": "classification",
+    "action": "action",
+    "summary": "summary",
+    "notes": "notes",
+    "decision": "decision",
+    "returnSentAt": "return_sent_at",
+    "formToken": "form_token",
+}
+
+
 def ensure_database():
-    if not DATABASE_URL:
+    global DATABASE_READY
+    if not DATABASE_URL or DATABASE_READY:
         return
 
     with db_connect() as connection:
         with connection.cursor() as cursor:
+            # Legacy single-blob table. Kept so the one-time backfill below has a
+            # source; no longer written to once this migration runs.
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS virtus_state (
@@ -810,41 +872,353 @@ def ensure_database():
                 """
             )
 
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS plans (
+                  id TEXT PRIMARY KEY,
+                  name TEXT NOT NULL,
+                  price_cents INTEGER NOT NULL,
+                  response_quota INTEGER NOT NULL,
+                  document_quota INTEGER NOT NULL DEFAULT 0,
+                  sla_hours INTEGER NOT NULL,
+                  priority_scheduling BOOLEAN NOT NULL DEFAULT FALSE
+                )
+                """
+            )
 
-def read_patients_from_database():
-    return read_state_from_database("patients")
+            cursor.execute(
+                """
+                INSERT INTO plans (id, name, price_cents, response_quota, document_quota, sla_hours, priority_scheduling)
+                VALUES
+                  ('essencial', 'Essencial', 20000, 5, 0, 48, FALSE),
+                  ('prioritario', 'Prioritário', 45000, 10, 1, 24, TRUE),
+                  ('essencial_familia', 'Essencial Família', 25000, 6, 0, 48, FALSE),
+                  ('prioritario_familia', 'Prioritário Família', 55000, 12, 1, 24, TRUE)
+                ON CONFLICT (id) DO NOTHING
+                """
+            )
+
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS patients (
+                  id TEXT PRIMARY KEY,
+                  name TEXT NOT NULL DEFAULT '',
+                  phone TEXT NOT NULL DEFAULT '',
+                  birthdate TEXT NOT NULL DEFAULT '',
+                  doctor TEXT NOT NULL DEFAULT '',
+                  last_visit TEXT NOT NULL DEFAULT '',
+                  return_date TEXT NOT NULL DEFAULT '',
+                  status TEXT NOT NULL DEFAULT '',
+                  classification TEXT NOT NULL DEFAULT '',
+                  action TEXT NOT NULL DEFAULT '',
+                  summary TEXT NOT NULL DEFAULT '',
+                  notes TEXT NOT NULL DEFAULT '',
+                  decision TEXT NOT NULL DEFAULT '',
+                  return_sent_at TEXT NOT NULL DEFAULT '',
+                  form_token TEXT NOT NULL DEFAULT '',
+                  plan_id TEXT REFERENCES plans(id),
+                  plan_start_date TEXT,
+                  is_minor BOOLEAN NOT NULL DEFAULT FALSE,
+                  minor_type TEXT,
+                  consent_accepted_at TIMESTAMPTZ,
+                  consent_version TEXT,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS guardians (
+                  id TEXT PRIMARY KEY,
+                  patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+                  name TEXT NOT NULL,
+                  phone TEXT NOT NULL,
+                  is_contracting BOOLEAN NOT NULL DEFAULT FALSE,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS plan_balances (
+                  id TEXT PRIMARY KEY,
+                  patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+                  plan_id TEXT NOT NULL REFERENCES plans(id),
+                  period_start DATE NOT NULL,
+                  period_end DATE NOT NULL,
+                  response_quota INTEGER NOT NULL,
+                  response_used INTEGER NOT NULL DEFAULT 0,
+                  document_quota INTEGER NOT NULL DEFAULT 0,
+                  document_used INTEGER NOT NULL DEFAULT 0,
+                  warning_sent_at TIMESTAMPTZ,
+                  exhausted_at TIMESTAMPTZ,
+                  UNIQUE (patient_id, period_start)
+                )
+                """
+            )
+
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS messages (
+                  id TEXT PRIMARY KEY,
+                  patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+                  sender_type TEXT NOT NULL,
+                  sender_guardian_id TEXT REFERENCES guardians(id),
+                  body TEXT NOT NULL,
+                  is_urgent BOOLEAN NOT NULL DEFAULT FALSE,
+                  consumes_balance BOOLEAN NOT NULL DEFAULT FALSE,
+                  balance_kind TEXT,
+                  sla_due_at TIMESTAMPTZ,
+                  status TEXT NOT NULL DEFAULT 'pendente',
+                  answered_message_id TEXT REFERENCES messages(id),
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                  answered_at TIMESTAMPTZ
+                )
+                """
+            )
+
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS attendances (
+                  id TEXT PRIMARY KEY,
+                  patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+                  message_id TEXT REFERENCES messages(id),
+                  opened_at TIMESTAMPTZ NOT NULL,
+                  closed_at TIMESTAMPTZ,
+                  duration_seconds INTEGER,
+                  actor TEXT NOT NULL DEFAULT 'medica'
+                )
+                """
+            )
+
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS checkins (
+                  id TEXT PRIMARY KEY,
+                  patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+                  respondent_type TEXT NOT NULL DEFAULT 'paciente',
+                  improvement TEXT,
+                  adherence TEXT,
+                  side_effects TEXT,
+                  side_effect_detail TEXT,
+                  sleep TEXT,
+                  symptoms TEXT,
+                  notes TEXT,
+                  classification TEXT NOT NULL,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS audit_events (
+                  id TEXT PRIMARY KEY,
+                  type TEXT NOT NULL,
+                  patient_id TEXT NOT NULL DEFAULT '',
+                  actor TEXT NOT NULL DEFAULT '',
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+
+            # One-time backfill from the legacy JSONB blob. Idempotent: ON CONFLICT
+            # DO NOTHING means this is a cheap no-op on every init after the first run.
+            cursor.execute(
+                """
+                INSERT INTO patients (id, name, phone, birthdate, doctor, last_visit, return_date, status, classification, action, summary, notes, decision, return_sent_at, form_token)
+                SELECT
+                  elem->>'id', COALESCE(elem->>'name', ''), COALESCE(elem->>'phone', ''), COALESCE(elem->>'birthdate', ''),
+                  COALESCE(elem->>'doctor', ''), COALESCE(elem->>'lastVisit', ''), COALESCE(elem->>'returnDate', ''),
+                  COALESCE(elem->>'status', ''), COALESCE(elem->>'classification', ''), COALESCE(elem->>'action', ''),
+                  COALESCE(elem->>'summary', ''), COALESCE(elem->>'notes', ''), COALESCE(elem->>'decision', ''),
+                  COALESCE(elem->>'returnSentAt', ''), COALESCE(elem->>'formToken', '')
+                FROM virtus_state, jsonb_array_elements(payload) AS elem
+                WHERE id = 'patients' AND elem->>'id' IS NOT NULL
+                ON CONFLICT (id) DO NOTHING
+                """
+            )
+
+            cursor.execute(
+                """
+                INSERT INTO audit_events (id, type, patient_id, actor, created_at)
+                SELECT
+                  elem->>'id', COALESCE(elem->>'type', ''), COALESCE(elem->>'patientId', ''), COALESCE(elem->>'actor', ''),
+                  COALESCE(NULLIF(elem->>'createdAt', '')::timestamptz, now())
+                FROM virtus_state, jsonb_array_elements(payload) AS elem
+                WHERE id = 'audit_events' AND elem->>'id' IS NOT NULL
+                ON CONFLICT (id) DO NOTHING
+                """
+            )
+
+    DATABASE_READY = True
 
 
-def write_patients_to_database(patients):
-    write_state_to_database("patients", patients)
+def patient_row_to_dict(row, columns):
+    record = dict(zip(columns, row))
+    return {
+        "id": record["id"],
+        "name": record["name"],
+        "phone": record["phone"],
+        "birthdate": record["birthdate"],
+        "doctor": record["doctor"],
+        "lastVisit": record["last_visit"],
+        "returnDate": record["return_date"],
+        "status": record["status"],
+        "classification": record["classification"],
+        "action": record["action"],
+        "summary": record["summary"],
+        "notes": record["notes"],
+        "decision": record["decision"],
+        "returnSentAt": record["return_sent_at"],
+        "formToken": record["form_token"],
+    }
 
 
-def read_state_from_database(state_id):
+def count_patients_in_database():
     ensure_database()
     with db_connect() as connection:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT payload FROM virtus_state WHERE id = %s", (state_id,))
+            cursor.execute("SELECT COUNT(*) FROM patients")
+            return cursor.fetchone()[0]
+
+
+def read_patients_from_database():
+    ensure_database()
+    with db_connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM patients ORDER BY created_at DESC")
+            columns = [description.name for description in cursor.description]
+            return [patient_row_to_dict(row, columns) for row in cursor.fetchall()]
+
+
+def read_patient_by_id_from_database(patient_id):
+    ensure_database()
+    with db_connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM patients WHERE id = %s", (patient_id,))
             row = cursor.fetchone()
             if not row:
-                return []
-            payload = row[0]
-            if isinstance(payload, str):
-                return json.loads(payload)
-            return payload
+                return None
+            columns = [description.name for description in cursor.description]
+            return patient_row_to_dict(row, columns)
 
 
-def write_state_to_database(state_id, payload):
+def insert_patient_in_database(patient):
     ensure_database()
     with db_connect() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO virtus_state (id, payload)
-                VALUES (%s, %s::jsonb)
-                ON CONFLICT (id)
-                DO UPDATE SET payload = EXCLUDED.payload
+                INSERT INTO patients (id, name, phone, birthdate, doctor, last_visit, return_date, status, classification, action, summary, notes, decision, return_sent_at, form_token)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
-                (state_id, json.dumps(payload, ensure_ascii=False)),
+                (
+                    patient["id"],
+                    patient.get("name", ""),
+                    patient.get("phone", ""),
+                    patient.get("birthdate", ""),
+                    patient.get("doctor", ""),
+                    patient.get("lastVisit", ""),
+                    patient.get("returnDate", ""),
+                    patient.get("status", ""),
+                    patient.get("classification", ""),
+                    patient.get("action", ""),
+                    patient.get("summary", ""),
+                    patient.get("notes", ""),
+                    patient.get("decision", ""),
+                    patient.get("returnSentAt", ""),
+                    patient.get("formToken", ""),
+                ),
+            )
+
+
+def update_patient_in_database(patient_id, fields):
+    ensure_database()
+    assignments = []
+    values = []
+    for key, column in PATIENT_COLUMNS.items():
+        if key not in fields:
+            continue
+        assignments.append(f"{column} = %s")
+        values.append(fields[key])
+
+    if not assignments:
+        return read_patient_by_id_from_database(patient_id)
+
+    assignments.append("updated_at = now()")
+    values.append(patient_id)
+
+    with db_connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"UPDATE patients SET {', '.join(assignments)} WHERE id = %s RETURNING *",
+                values,
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            columns = [description.name for description in cursor.description]
+            return patient_row_to_dict(row, columns)
+
+
+def write_patients_to_database(patients):
+    # Full-list replace, kept only for the legacy bulk PUT /api/patients sync path.
+    ensure_database()
+    ids = [patient["id"] for patient in patients]
+
+    for patient in patients:
+        if read_patient_by_id_from_database(patient["id"]):
+            update_patient_in_database(patient["id"], patient)
+        else:
+            insert_patient_in_database(patient)
+
+    with db_connect() as connection:
+        with connection.cursor() as cursor:
+            if ids:
+                cursor.execute("DELETE FROM patients WHERE id <> ALL(%s)", (ids,))
+            else:
+                cursor.execute("DELETE FROM patients")
+
+
+def read_audit_events_from_database():
+    ensure_database()
+    with db_connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, type, patient_id, actor, created_at FROM audit_events ORDER BY created_at DESC LIMIT %s",
+                (MAX_AUDIT_EVENTS,),
+            )
+            return [
+                {
+                    "id": row[0],
+                    "type": row[1],
+                    "patientId": row[2],
+                    "actor": row[3],
+                    "createdAt": row[4].strftime("%Y-%m-%dT%H:%M:%SZ"),
+                }
+                for row in cursor.fetchall()
+            ]
+
+
+def record_audit_event_in_database(event_type, patient_id, actor):
+    ensure_database()
+    with db_connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO audit_events (id, type, patient_id, actor) VALUES (%s,%s,%s,%s)",
+                (secrets.token_urlsafe(12), clean_text(event_type, 80), clean_text(patient_id, 80), clean_text(actor, 40)),
+            )
+            cursor.execute(
+                """
+                DELETE FROM audit_events WHERE id NOT IN (
+                  SELECT id FROM audit_events ORDER BY created_at DESC LIMIT %s
+                )
+                """,
+                (MAX_AUDIT_EVENTS,),
             )
 
 

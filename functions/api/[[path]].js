@@ -128,12 +128,177 @@ function databaseConnectionString() {
 
 async function ensureDatabase() {
   if (databaseReady) return;
-  await getPool().query(`
+  const pool = getPool();
+
+  // Legacy single-blob table. Kept so the one-time backfill below has a source;
+  // no longer written to once this migration runs.
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS virtus_state (
       id TEXT PRIMARY KEY,
       payload JSONB NOT NULL
     )
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS plans (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      price_cents INTEGER NOT NULL,
+      response_quota INTEGER NOT NULL,
+      document_quota INTEGER NOT NULL DEFAULT 0,
+      sla_hours INTEGER NOT NULL,
+      priority_scheduling BOOLEAN NOT NULL DEFAULT FALSE
+    )
+  `);
+
+  await pool.query(`
+    INSERT INTO plans (id, name, price_cents, response_quota, document_quota, sla_hours, priority_scheduling)
+    VALUES
+      ('essencial', 'Essencial', 20000, 5, 0, 48, FALSE),
+      ('prioritario', 'Prioritário', 45000, 10, 1, 24, TRUE),
+      ('essencial_familia', 'Essencial Família', 25000, 6, 0, 48, FALSE),
+      ('prioritario_familia', 'Prioritário Família', 55000, 12, 1, 24, TRUE)
+    ON CONFLICT (id) DO NOTHING
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS patients (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '',
+      birthdate TEXT NOT NULL DEFAULT '',
+      doctor TEXT NOT NULL DEFAULT '',
+      last_visit TEXT NOT NULL DEFAULT '',
+      return_date TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT '',
+      classification TEXT NOT NULL DEFAULT '',
+      action TEXT NOT NULL DEFAULT '',
+      summary TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      decision TEXT NOT NULL DEFAULT '',
+      return_sent_at TEXT NOT NULL DEFAULT '',
+      form_token TEXT NOT NULL DEFAULT '',
+      plan_id TEXT REFERENCES plans(id),
+      plan_start_date TEXT,
+      is_minor BOOLEAN NOT NULL DEFAULT FALSE,
+      minor_type TEXT,
+      consent_accepted_at TIMESTAMPTZ,
+      consent_version TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS guardians (
+      id TEXT PRIMARY KEY,
+      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      is_contracting BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS plan_balances (
+      id TEXT PRIMARY KEY,
+      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      plan_id TEXT NOT NULL REFERENCES plans(id),
+      period_start DATE NOT NULL,
+      period_end DATE NOT NULL,
+      response_quota INTEGER NOT NULL,
+      response_used INTEGER NOT NULL DEFAULT 0,
+      document_quota INTEGER NOT NULL DEFAULT 0,
+      document_used INTEGER NOT NULL DEFAULT 0,
+      warning_sent_at TIMESTAMPTZ,
+      exhausted_at TIMESTAMPTZ,
+      UNIQUE (patient_id, period_start)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id TEXT PRIMARY KEY,
+      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      sender_type TEXT NOT NULL,
+      sender_guardian_id TEXT REFERENCES guardians(id),
+      body TEXT NOT NULL,
+      is_urgent BOOLEAN NOT NULL DEFAULT FALSE,
+      consumes_balance BOOLEAN NOT NULL DEFAULT FALSE,
+      balance_kind TEXT,
+      sla_due_at TIMESTAMPTZ,
+      status TEXT NOT NULL DEFAULT 'pendente',
+      answered_message_id TEXT REFERENCES messages(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      answered_at TIMESTAMPTZ
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS attendances (
+      id TEXT PRIMARY KEY,
+      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      message_id TEXT REFERENCES messages(id),
+      opened_at TIMESTAMPTZ NOT NULL,
+      closed_at TIMESTAMPTZ,
+      duration_seconds INTEGER,
+      actor TEXT NOT NULL DEFAULT 'medica'
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS checkins (
+      id TEXT PRIMARY KEY,
+      patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      respondent_type TEXT NOT NULL DEFAULT 'paciente',
+      improvement TEXT,
+      adherence TEXT,
+      side_effects TEXT,
+      side_effect_detail TEXT,
+      sleep TEXT,
+      symptoms TEXT,
+      notes TEXT,
+      classification TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      patient_id TEXT NOT NULL DEFAULT '',
+      actor TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+
+  // One-time backfill from the legacy JSONB blob. Idempotent: ON CONFLICT DO NOTHING
+  // means this is a cheap no-op on every init after the first successful run.
+  await pool.query(`
+    INSERT INTO patients (id, name, phone, birthdate, doctor, last_visit, return_date, status, classification, action, summary, notes, decision, return_sent_at, form_token)
+    SELECT
+      elem->>'id', COALESCE(elem->>'name', ''), COALESCE(elem->>'phone', ''), COALESCE(elem->>'birthdate', ''),
+      COALESCE(elem->>'doctor', ''), COALESCE(elem->>'lastVisit', ''), COALESCE(elem->>'returnDate', ''),
+      COALESCE(elem->>'status', ''), COALESCE(elem->>'classification', ''), COALESCE(elem->>'action', ''),
+      COALESCE(elem->>'summary', ''), COALESCE(elem->>'notes', ''), COALESCE(elem->>'decision', ''),
+      COALESCE(elem->>'returnSentAt', ''), COALESCE(elem->>'formToken', '')
+    FROM virtus_state, jsonb_array_elements(payload) AS elem
+    WHERE id = 'patients' AND elem->>'id' IS NOT NULL
+    ON CONFLICT (id) DO NOTHING
+  `);
+
+  await pool.query(`
+    INSERT INTO audit_events (id, type, patient_id, actor, created_at)
+    SELECT
+      elem->>'id', COALESCE(elem->>'type', ''), COALESCE(elem->>'patientId', ''), COALESCE(elem->>'actor', ''),
+      COALESCE(NULLIF(elem->>'createdAt', '')::timestamptz, now())
+    FROM virtus_state, jsonb_array_elements(payload) AS elem
+    WHERE id = 'audit_events' AND elem->>'id' IS NOT NULL
+    ON CONFLICT (id) DO NOTHING
+  `);
+
   databaseReady = true;
 }
 
@@ -141,52 +306,165 @@ async function checkDatabase() {
   await getPool().query("SELECT 1");
 }
 
-async function readState(stateId) {
-  await ensureDatabase();
-  const result = await getPool().query("SELECT payload FROM virtus_state WHERE id = $1", [stateId]);
-  return result.rows[0]?.payload || [];
+const PATIENT_COLUMNS = {
+  name: "name",
+  phone: "phone",
+  birthdate: "birthdate",
+  doctor: "doctor",
+  lastVisit: "last_visit",
+  returnDate: "return_date",
+  status: "status",
+  classification: "classification",
+  action: "action",
+  summary: "summary",
+  notes: "notes",
+  decision: "decision",
+  returnSentAt: "return_sent_at",
+  formToken: "form_token",
+};
+
+function rowToPatient(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    phone: row.phone,
+    birthdate: row.birthdate,
+    doctor: row.doctor,
+    lastVisit: row.last_visit,
+    returnDate: row.return_date,
+    status: row.status,
+    classification: row.classification,
+    action: row.action,
+    summary: row.summary,
+    notes: row.notes,
+    decision: row.decision,
+    returnSentAt: row.return_sent_at,
+    formToken: row.form_token,
+  };
 }
 
-async function writeState(stateId, payload) {
+async function countPatients() {
   await ensureDatabase();
-  await getPool().query(
-    `
-    INSERT INTO virtus_state (id, payload)
-    VALUES ($1, $2::jsonb)
-    ON CONFLICT (id)
-    DO UPDATE SET payload = EXCLUDED.payload
-    `,
-    [stateId, JSON.stringify(payload)],
-  );
+  const result = await getPool().query("SELECT COUNT(*)::int AS count FROM patients");
+  return result.rows[0]?.count || 0;
 }
 
 async function readPatients() {
-  return readState("patients");
+  await ensureDatabase();
+  const result = await getPool().query("SELECT * FROM patients ORDER BY created_at DESC");
+  return result.rows.map(rowToPatient);
+}
+
+async function readPatientById(patientId) {
+  await ensureDatabase();
+  const result = await getPool().query("SELECT * FROM patients WHERE id = $1", [patientId]);
+  return result.rows[0] ? rowToPatient(result.rows[0]) : null;
+}
+
+async function insertPatient(patient) {
+  await ensureDatabase();
+  await getPool().query(
+    `INSERT INTO patients (id, name, phone, birthdate, doctor, last_visit, return_date, status, classification, action, summary, notes, decision, return_sent_at, form_token)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+    [
+      patient.id,
+      patient.name,
+      patient.phone,
+      patient.birthdate,
+      patient.doctor,
+      patient.lastVisit,
+      patient.returnDate,
+      patient.status,
+      patient.classification,
+      patient.action,
+      patient.summary,
+      patient.notes,
+      patient.decision,
+      patient.returnSentAt,
+      patient.formToken,
+    ],
+  );
+}
+
+async function updatePatient(patientId, fields) {
+  await ensureDatabase();
+  const assignments = [];
+  const values = [];
+  let index = 1;
+
+  for (const [key, column] of Object.entries(PATIENT_COLUMNS)) {
+    if (!(key in fields)) continue;
+    assignments.push(`${column} = $${index}`);
+    values.push(fields[key]);
+    index += 1;
+  }
+
+  if (!assignments.length) return readPatientById(patientId);
+
+  assignments.push("updated_at = now()");
+  values.push(patientId);
+
+  const result = await getPool().query(
+    `UPDATE patients SET ${assignments.join(", ")} WHERE id = $${index} RETURNING *`,
+    values,
+  );
+  return result.rows[0] ? rowToPatient(result.rows[0]) : null;
 }
 
 async function writePatients(patients) {
-  await writeState("patients", patients);
+  // Full-list replace, kept only for the legacy bulk PUT /api/patients sync path.
+  // Not a single transaction (each upsert/delete is its own connection, matching
+  // this file's existing per-call connection style) — acceptable for that rarely
+  // used recovery path at this scale.
+  await ensureDatabase();
+  const ids = patients.map((patient) => patient.id);
+
+  for (const patient of patients) {
+    const existing = await readPatientById(patient.id);
+    if (existing) {
+      await updatePatient(patient.id, patient);
+    } else {
+      await insertPatient(patient);
+    }
+  }
+
+  if (ids.length) {
+    await getPool().query("DELETE FROM patients WHERE id <> ALL($1::text[])", [ids]);
+  } else {
+    await getPool().query("DELETE FROM patients");
+  }
 }
 
 async function readAuditEvents() {
-  return readState("audit_events");
-}
-
-async function writeAuditEvents(events) {
-  await writeState("audit_events", events.slice(0, MAX_AUDIT_EVENTS));
+  await ensureDatabase();
+  const result = await getPool().query(
+    "SELECT * FROM audit_events ORDER BY created_at DESC LIMIT $1",
+    [MAX_AUDIT_EVENTS],
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    type: row.type,
+    patientId: row.patient_id,
+    actor: row.actor,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+  }));
 }
 
 async function recordAuditEvent(type, patientId = "", actor = "system") {
   try {
-    const event = {
-      id: crypto.randomBytes(12).toString("base64url"),
-      type: cleanText(type, 80),
-      patientId: cleanText(patientId, 80),
-      actor: cleanText(actor, 40),
-      createdAt: new Date().toISOString(),
-    };
-    const events = await readAuditEvents();
-    await writeAuditEvents([event, ...events]);
+    await ensureDatabase();
+    const id = crypto.randomBytes(12).toString("base64url");
+    await getPool().query(
+      "INSERT INTO audit_events (id, type, patient_id, actor) VALUES ($1,$2,$3,$4)",
+      [id, cleanText(type, 80), cleanText(patientId, 80), cleanText(actor, 40)],
+    );
+    // Keep the table bounded to the same window the old blob enforced.
+    await getPool().query(
+      `DELETE FROM audit_events WHERE id NOT IN (
+         SELECT id FROM audit_events ORDER BY created_at DESC LIMIT $1
+       )`,
+      [MAX_AUDIT_EVENTS],
+    );
   } catch (error) {
     console.error(`Falha ao registrar auditoria: ${error.constructor.name}`);
   }
@@ -526,10 +804,8 @@ async function route(event) {
     if (sameOriginError) return sameOriginError;
 
     const patient = prepareRegisteredPatient(parseBody(event));
-    const patients = await readPatients();
-    if (patients.length >= MAX_PATIENTS) return jsonResponse(400, { error: "Limite de pacientes atingido" });
-    patients.unshift(patient);
-    await writePatients(patients);
+    if ((await countPatients()) >= MAX_PATIENTS) return jsonResponse(400, { error: "Limite de pacientes atingido" });
+    await insertPatient(patient);
     await recordAuditEvent("patient_registered", patient.id, "admin");
     return jsonResponse(200, patient);
   }
@@ -550,7 +826,7 @@ async function route(event) {
   if (method === "GET" && path.startsWith("/api/patients/")) {
     const patientId = patientIdFromPath(path);
     if (!PATIENT_ID_PATTERN.test(patientId)) return jsonResponse(404, { error: "Paciente não encontrado" });
-    const patient = (await readPatients()).find((item) => item.id === patientId);
+    const patient = await readPatientById(patientId);
     if (!patient) return jsonResponse(404, { error: "Paciente não encontrado" });
     if (!validPatientAccess(event, patient)) return jsonResponse(403, { error: "Link inválido" });
     return jsonResponse(200, publicPatient(patient));
@@ -563,14 +839,12 @@ async function route(event) {
     const patientId = patientIdFromPath(path, "/response");
     if (!PATIENT_ID_PATTERN.test(patientId)) return jsonResponse(404, { error: "Paciente não encontrado" });
     const payload = parseBody(event);
-    const patients = await readPatients();
-    const patient = patients.find((item) => item.id === patientId);
+    const patient = await readPatientById(patientId);
     if (!patient) return jsonResponse(404, { error: "Paciente não encontrado" });
     if (!validPatientAccess(event, patient)) return jsonResponse(403, { error: "Link inválido" });
     if (patient.status === "Formulário respondido") return jsonResponse(200, publicPatient(patient));
 
-    const updatedPatient = applyResponse(patient, payload);
-    await writePatients(patients.map((item) => (item.id === patientId ? updatedPatient : item)));
+    const updatedPatient = await updatePatient(patientId, applyResponse(patient, payload));
     await recordAuditEvent("patient_response", patientId, "patient");
     return jsonResponse(200, publicPatient(updatedPatient));
   }
@@ -586,22 +860,14 @@ async function route(event) {
     const decision = cleanText(parseBody(event).decision, 80);
     if (!ALLOWED_DECISIONS.has(decision)) return jsonResponse(400, { error: "Decisão inválida" });
 
-    const patients = await readPatients();
-    let updatedPatient = null;
-    const nextPatients = patients.map((patient) => {
-      if (patient.id !== patientId) return patient;
-      updatedPatient = {
-        ...patient,
-        decision,
-        returnSentAt: "",
-        status: "Decisão médica registrada",
-        action: `${decision} definido pelo médico`,
-      };
-      return updatedPatient;
+    const updatedPatient = await updatePatient(patientId, {
+      decision,
+      returnSentAt: "",
+      status: "Decisão médica registrada",
+      action: `${decision} definido pelo médico`,
     });
     if (!updatedPatient) return jsonResponse(404, { error: "Paciente não encontrado" });
 
-    await writePatients(nextPatients);
     await recordAuditEvent("medical_decision", patientId, "admin");
     return jsonResponse(200, updatedPatient);
   }
@@ -614,20 +880,12 @@ async function route(event) {
 
     const patientId = patientIdFromPath(path, "/sent");
     if (!PATIENT_ID_PATTERN.test(patientId)) return jsonResponse(404, { error: "Paciente não encontrado" });
-    const patients = await readPatients();
-    let updatedPatient = null;
-    const nextPatients = patients.map((patient) => {
-      if (patient.id !== patientId) return patient;
-      updatedPatient = {
-        ...patient,
-        status: "WhatsApp enviado",
-        action: "Aguardando resposta do formulário",
-      };
-      return updatedPatient;
+    const updatedPatient = await updatePatient(patientId, {
+      status: "WhatsApp enviado",
+      action: "Aguardando resposta do formulário",
     });
     if (!updatedPatient) return jsonResponse(404, { error: "Paciente não encontrado" });
 
-    await writePatients(nextPatients);
     await recordAuditEvent("whatsapp_sent", patientId, "admin");
     return jsonResponse(200, updatedPatient);
   }
@@ -641,19 +899,9 @@ async function route(event) {
     const patientId = patientIdFromPath(path, "/return-sent");
     if (!PATIENT_ID_PATTERN.test(patientId)) return jsonResponse(404, { error: "Paciente não encontrado" });
     const sentAt = cleanText(parseBody(event).sentAt, 40) || new Date().toISOString();
-    const patients = await readPatients();
-    let updatedPatient = null;
-    const nextPatients = patients.map((patient) => {
-      if (patient.id !== patientId) return patient;
-      updatedPatient = {
-        ...patient,
-        returnSentAt: sentAt,
-      };
-      return updatedPatient;
-    });
+    const updatedPatient = await updatePatient(patientId, { returnSentAt: sentAt });
     if (!updatedPatient) return jsonResponse(404, { error: "Paciente não encontrado" });
 
-    await writePatients(nextPatients);
     await recordAuditEvent("patient_return_sent", patientId, "admin");
     return jsonResponse(200, updatedPatient);
   }
